@@ -27,8 +27,10 @@ export interface LoginPayload {
   password: string
 }
 
+/** register() khong con tra token - tai khoan moi tao la UNVERIFIED, phai xac minh OTP
+ *  roi tu dang nhap that qua login() (backend chan hoan toan login khi UNVERIFIED). */
 export function register(payload: RegisterPayload) {
-  return apiFetch<TokenResponse>('/auth/register', { method: 'POST', body: payload })
+  return apiFetch<void>('/auth/register', { method: 'POST', body: payload })
 }
 
 export function login(payload: LoginPayload) {

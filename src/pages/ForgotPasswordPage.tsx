@@ -6,6 +6,7 @@ import { Input } from '@ds/components/forms/Input'
 import { AuthLayout } from '../features/auth/AuthLayout.tsx'
 import { forgotPassword } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
+import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 
@@ -43,7 +44,7 @@ export function ForgotPasswordPage() {
 
   return (
     <AuthLayout variant="login">
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6" onKeyDown={submitOnEnter(handleSubmit, busy)}>
         <div className="flex flex-col gap-2">
           <h2 className="m-0" style={{ fontSize: 'var(--fs-h1)', lineHeight: 'var(--lh-h1)', fontWeight: 'var(--fw-black)', color: 'var(--text-title)' }}>
             Quên mật khẩu

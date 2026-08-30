@@ -3,18 +3,20 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
 import { Button } from '@ds/components/core/Button'
 import { Field } from '@ds/components/forms/Field'
-import { Icon } from '@ds/components/core/Icon'
 import { Input } from '@ds/components/forms/Input'
 import { AuthLayout } from '../features/auth/AuthLayout.tsx'
 import { forgotPassword, resendVerification, verifyEmail } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
-import { useAuthStore } from '../stores/useAuthStore.ts'
+import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
 
 interface VerifyLocationState {
   mode: 'signup' | 'reset'
   email: string
   name?: string
   phone?: string
+  /** Thong bao ly do vao thang man nay - vd tu dang nhap voi tai khoan UNVERIFIED, hoac
+   *  tu dang ky trung email chua xac thuc. Khac voi "notice" cuc bo (xac nhan da gui lai ma). */
+  entryNotice?: string
 }
 
 const RESEND_COOLDOWN_SECONDS = 60
@@ -29,14 +31,12 @@ const RESEND_COOLDOWN_SECONDS = 60
 export function VerifyEmailPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const setAccountStatus = useAuthStore((state) => state.setAccountStatus)
   const state = location.state as VerifyLocationState | null
 
   const [otp, setOtp] = useState('')
   const [otpError, setOtpError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [verified, setVerified] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(RESEND_COOLDOWN_SECONDS)
 
   useEffect(() => {
@@ -62,8 +62,9 @@ export function VerifyEmailPage() {
     try {
       if (state.mode === 'signup') {
         await verifyEmail({ email: state.email, otp })
-        setAccountStatus('ACTIVE')
-        setVerified(true)
+        // register()/login() khong con cap token cho tai khoan UNVERIFIED nen toi day chac
+        // chan chua co session nao ca - luon ve /dang-nhap de nguoi dung tu dang nhap that.
+        navigate('/dang-nhap', { state: { justVerified: true }, replace: true })
       } else {
         navigate('/dat-lai-mat-khau', { state: { email: state.email, otp }, replace: true })
       }
@@ -91,59 +92,9 @@ export function VerifyEmailPage() {
     }
   }
 
-  if (verified) {
-    return (
-      <AuthLayout variant="signup">
-        <div className="flex flex-col gap-5">
-          <span
-            className="flex items-center justify-center"
-            style={{ width: 60, height: 60, borderRadius: 'var(--r-pill)', background: 'var(--teal-50)', border: 'var(--bw) solid var(--teal-200)', color: 'var(--teal-600)' }}
-          >
-            <Icon name="badge-check" size={28} />
-          </span>
-          <div className="flex flex-col gap-2">
-            <span style={{ fontSize: 'var(--fs-label)', textTransform: 'uppercase', fontWeight: 'var(--fw-bold)', color: 'var(--text-faint)' }}>
-              Bước 3 / 3 · hoàn tất
-            </span>
-            <h2 className="m-0" style={{ fontSize: 'var(--fs-h1)', lineHeight: 'var(--lh-h1)', fontWeight: 'var(--fw-black)', color: 'var(--text-title)' }}>
-              Đăng ký thành công
-            </h2>
-            <p className="m-0" style={{ color: 'var(--text-muted)' }}>
-              Email đã được xác minh và tài khoản của bạn đã sẵn sàng. Bắt đầu đăng việc hoặc tìm việc quanh bạn.
-            </p>
-          </div>
-
-          <div className="flex flex-col" style={{ border: 'var(--bw) solid var(--border)', borderRadius: 'var(--r-lg)', background: 'var(--surface-card-alt)', overflow: 'hidden' }}>
-            {[
-              ['Họ và tên', state.name || '—'],
-              ['Email', state.email],
-              ['Số điện thoại', state.phone || 'Chưa cung cấp'],
-            ].map(([label, value], index) => (
-              <div key={label}>
-                {index > 0 && <div style={{ height: 1, background: 'var(--border)' }} />}
-                <div className="flex items-baseline justify-between gap-4 p-4">
-                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>{label}</span>
-                  <span style={{ fontSize: 'var(--fs-body)', fontWeight: 'var(--fw-bold)', color: 'var(--text-title)', textAlign: 'right' }}>{value}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <Alert tone="info" icon="shield-question" title="Xác minh danh tính làm sau">
-            Đăng việc thì chưa cần xác minh. Muốn nhận việc hoặc rút tiền từ ví, bạn gửi ảnh CCCD trong mục Hồ sơ sau khi vào trang chủ.
-          </Alert>
-
-          <Button variant="primary" size="lg" block onClick={() => navigate('/', { replace: true })}>
-            Vào trang chủ
-          </Button>
-        </div>
-      </AuthLayout>
-    )
-  }
-
   return (
     <AuthLayout variant={state.mode === 'signup' ? 'signup' : 'login'}>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6" onKeyDown={submitOnEnter(handleSubmit, busy || otp.length < 6)}>
         <div className="flex flex-col gap-2">
           <h2 className="m-0" style={{ fontSize: 'var(--fs-h1)', lineHeight: 'var(--lh-h1)', fontWeight: 'var(--fw-black)', color: 'var(--text-title)' }}>
             Nhập mã xác minh
@@ -153,6 +104,10 @@ export function VerifyEmailPage() {
             <Link to={backPath} style={{ color: 'var(--text-link)', fontWeight: 'var(--fw-bold)' }}>Sửa lại</Link>
           </p>
         </div>
+
+        {state.entryNotice && (
+          <Alert tone="warning" icon="shield-alert" title="Email chưa xác thực">{state.entryNotice}</Alert>
+        )}
 
         {notice && !otpError && <Alert tone="info" title="Đã gửi mã mới">{notice}</Alert>}
         {otpError && <Alert tone="danger" title="Mã chưa đúng">{otpError}</Alert>}

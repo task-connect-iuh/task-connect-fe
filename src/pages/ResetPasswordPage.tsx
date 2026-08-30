@@ -6,6 +6,7 @@ import { AuthLayout } from '../features/auth/AuthLayout.tsx'
 import { PasswordInput } from '../features/auth/PasswordInput.tsx'
 import { resetPassword } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
+import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
 
 interface ResetLocationState {
   email: string
@@ -63,7 +64,7 @@ export function ResetPasswordPage() {
 
   return (
     <AuthLayout variant="login">
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6" onKeyDown={submitOnEnter(handleSubmit, busy)}>
         <div className="flex flex-col gap-2">
           <h2 className="m-0" style={{ fontSize: 'var(--fs-h1)', lineHeight: 'var(--lh-h1)', fontWeight: 'var(--fw-black)', color: 'var(--text-title)' }}>
             Đặt mật khẩu mới

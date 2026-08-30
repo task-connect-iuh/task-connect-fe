@@ -9,8 +9,8 @@ interface UseScrollRevealOptions {
  * chay dung mot lan, khong lap khi cuon nguoc. Ton trong prefers-reduced-motion: tra ve
  * trang thai da hien san, khong giu phan tu vo hinh. Xem 20-design-system.md.
  */
-export function useScrollReveal({ threshold = 0.15 }: UseScrollRevealOptions = {}) {
-  const ref = useRef<HTMLElement>(null)
+export function useScrollReveal<T extends HTMLElement = HTMLElement>({ threshold = 0.15 }: UseScrollRevealOptions = {}) {
+  const ref = useRef<T>(null)
   const reduceMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const [revealed, setRevealed] = useState(reduceMotion)

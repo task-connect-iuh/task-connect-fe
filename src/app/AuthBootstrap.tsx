@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { refresh } from '../api/auth.ts'
+// Import chi de dang ky listener dong bo Session giua cac tab (side effect luc module nap
+// lan dau) - xem authBroadcast.ts. AuthBootstrap la noi chac chan mount o moi trang, hop
+// ly nhat de dam bao listener luon san sang bat ke route nao dang mo.
+import '../stores/authBroadcast.ts'
 import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
 
 /**
