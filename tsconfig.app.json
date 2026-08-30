@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Alias phai khop chinh xac voi resolve.alias trong vite.config.ts,
+       khong thi tsc va Vite se resolve khac nhau. Xem 21-react-frontend.md.
+       Khong con "baseUrl" (bo trong TypeScript 7) - "paths" tu resolve tuong doi
+       theo vi tri file tsconfig nay.
+       'react'/'react-dom' bat buoc phai map: cac file .d.ts trong @ds nam ngoai
+       repo nay, khong co node_modules rieng, tu import 'react' se khong resolve
+       duoc va bi skipLibCheck nuot loi trong im lang, lam CardProps/ButtonProps
+       mat het field ke thua tu React.HTMLAttributes. */
+    "paths": {
+      "@ds/*": ["../task-connect-claude/.claude/skills/taskconnect-design/*"],
+      "react": ["./node_modules/@types/react"],
+      "react-dom": ["./node_modules/@types/react-dom"]
+    },
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}
