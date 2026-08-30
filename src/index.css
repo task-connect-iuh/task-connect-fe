@@ -1,3 +1,12 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* An thanh cuon mac dinh cua trinh duyet cho hang nav ngang o AppShell.tsx - scrollbar xam
+   mac dinh lac long tren nen teal dam, thay bang 2 IconButton mui ten dieu huong o component
+   do. scrollbar-width (Firefox) dat truc tiep qua inline style vi khong phai pseudo-element,
+   chi ::-webkit-scrollbar (Chrome/Safari/Edge) bat buoc phai la CSS that, khong lam duoc qua
+   style object cua React. */
+.tc-scroll-hidden::-webkit-scrollbar {
+  display: none;
+}

@@ -1,12 +1,16 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.tsx'
+import { KycPage } from '../pages/KycPage.tsx'
 import { LandingPage } from '../pages/LandingPage.tsx'
 import { LoginPage } from '../pages/LoginPage.tsx'
 import { NotFoundPage } from '../pages/NotFoundPage.tsx'
 import { OverviewPage } from '../pages/OverviewPage.tsx'
 import { PrivacyPage } from '../pages/PrivacyPage.tsx'
+import { ProfilePage } from '../pages/ProfilePage.tsx'
+import { PublicProfilePage } from '../pages/PublicProfilePage.tsx'
 import { RegisterPage } from '../pages/RegisterPage.tsx'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage.tsx'
+import { TaskerSkillsPage } from '../pages/TaskerSkillsPage.tsx'
 import { TermsPage } from '../pages/TermsPage.tsx'
 import { VerifyEmailPage } from '../pages/VerifyEmailPage.tsx'
 import { AuthBootstrap } from './AuthBootstrap.tsx'
@@ -28,6 +32,38 @@ function App() {
           element={(
             <RoleGuard allow={['poster', 'tasker', 'admin']}>
               <OverviewPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/ho-so"
+          element={(
+            <RoleGuard allow={['poster', 'tasker', 'admin']}>
+              <ProfilePage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/ho-so/:accountId"
+          element={(
+            <RoleGuard allow={['poster', 'tasker', 'admin']}>
+              <PublicProfilePage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/xac-thuc-danh-tinh"
+          element={(
+            <RoleGuard allow={['tasker']}>
+              <KycPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/ho-so-nang-luc"
+          element={(
+            <RoleGuard allow={['tasker']}>
+              <TaskerSkillsPage />
             </RoleGuard>
           )}
         />
