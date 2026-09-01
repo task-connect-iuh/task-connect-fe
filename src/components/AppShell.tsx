@@ -31,10 +31,11 @@ const BASE_NAV: NavItem[] = [
 ]
 
 // Chi Tasker moi can xac thuc danh tinh va khai bao ky nang (xem docs/PROGRESS-FE-USER-MODULE.md
-// "KYC Tasker-only") - Task Poster khong thay hai muc nay.
+// "KYC Tasker-only") - Task Poster khong thay muc nay. Xac thuc danh tinh (KYC) va Ho so
+// nang luc gop chung mot trang/mot muc nav duy nhat (TaskerSkillsPage) - CCCD chi xac thuc
+// mot lan roi thoi nen tach rieng mot tab la thua, xem TaskerSkillsPage.tsx.
 const TASKER_ONLY_NAV: NavItem[] = [
-  { value: 'kyc', label: 'Xác thực danh tính', icon: 'shield-check', to: '/xac-thuc-danh-tinh' },
-  { value: 'skills', label: 'Hồ sơ năng lực', icon: 'hard-hat', to: '/ho-so-nang-luc' },
+  { value: 'skills', label: 'Hồ sơ kỹ năng', icon: 'hard-hat', to: '/ho-so-nang-luc' },
 ]
 
 // Nut mui ten cuon nav - dung teal dam (--teal-800 nen, --teal-600 vien), CUNG tong voi pill

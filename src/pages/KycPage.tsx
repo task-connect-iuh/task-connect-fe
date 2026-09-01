@@ -41,6 +41,10 @@ export function KycPage() {
   const [idNumber, setIdNumber] = useState('')
   const [frontFile, setFrontFile] = useState<{ name: string, key: string } | null>(null)
   const [backFile, setBackFile] = useState<{ name: string, key: string } | null>(null)
+  // Object URL cuc bo (URL.createObjectURL) de xem truoc anh CCCD vua chon - khac object
+  // key tren S3 (frontFile.key), chi song trong trinh duyet, phai revoke khi thay hoac nop xong.
+  const [frontPreviewUrl, setFrontPreviewUrl] = useState<string | null>(null)
+  const [backPreviewUrl, setBackPreviewUrl] = useState<string | null>(null)
   const [uploadingSide, setUploadingSide] = useState<'FRONT' | 'BACK' | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ fullNameOnId?: string, idNumber?: string, front?: string, back?: string }>({})
   const [formError, setFormError] = useState('')
@@ -69,6 +73,14 @@ export function KycPage() {
     if (!ALLOWED_ID_IMAGE_TYPES.includes(file.type)) {
       setFieldErrors((prev) => ({ ...prev, [side === 'FRONT' ? 'front' : 'back']: 'Chỉ nhận ảnh JPEG, PNG hoặc WEBP.' }))
       return
+    }
+    const preview = URL.createObjectURL(file)
+    if (side === 'FRONT') {
+      if (frontPreviewUrl) URL.revokeObjectURL(frontPreviewUrl)
+      setFrontPreviewUrl(preview)
+    } else {
+      if (backPreviewUrl) URL.revokeObjectURL(backPreviewUrl)
+      setBackPreviewUrl(preview)
     }
     setUploadingSide(side)
     try {
@@ -107,6 +119,10 @@ export function KycPage() {
       setIdNumber('')
       setFrontFile(null)
       setBackFile(null)
+      if (frontPreviewUrl) URL.revokeObjectURL(frontPreviewUrl)
+      if (backPreviewUrl) URL.revokeObjectURL(backPreviewUrl)
+      setFrontPreviewUrl(null)
+      setBackPreviewUrl(null)
       refresh()
     } catch (error) {
       setFormError(error instanceof ApiError ? error.message : 'Không nộp được hồ sơ. Kiểm tra mạng rồi thử lại.')
@@ -143,6 +159,7 @@ export function KycPage() {
                             hint="Kéo ảnh vào đây hoặc bấm để chọn"
                             accept={ALLOWED_ID_IMAGE_TYPES.join(',')}
                             fileName={frontFile?.name || (uploadingSide === 'FRONT' ? 'Đang tải…' : null)}
+                            previewUrl={frontPreviewUrl}
                             error={fieldErrors.front}
                             disabled={busy || uploadingSide !== null}
                             onSelect={(file) => void handleUpload('FRONT', file)}
@@ -152,6 +169,7 @@ export function KycPage() {
                             hint="Kéo ảnh vào đây hoặc bấm để chọn"
                             accept={ALLOWED_ID_IMAGE_TYPES.join(',')}
                             fileName={backFile?.name || (uploadingSide === 'BACK' ? 'Đang tải…' : null)}
+                            previewUrl={backPreviewUrl}
                             error={fieldErrors.back}
                             disabled={busy || uploadingSide !== null}
                             onSelect={(file) => void handleUpload('BACK', file)}

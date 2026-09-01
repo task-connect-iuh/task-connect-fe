@@ -6,6 +6,7 @@ interface FileDropzoneProps {
   hint?: string
   accept: string
   fileName?: string | null
+  previewUrl?: string | null
   error?: string
   disabled?: boolean
   onSelect: (file: File) => void
@@ -15,8 +16,12 @@ interface FileDropzoneProps {
  * O chon file dang khung net dut, phong theo bo cuc trong @ds/ui_kits/tasker/KycScreen.jsx.
  * Component dung chung, khong thuoc @ds - DS chua co san khoi upload file nao (dung cho
  * avatar, anh CCCD, file chung chi Tasker deu qua presigned PUT S3 truc tiep tu client).
+ *
+ * previewUrl (object URL tu URL.createObjectURL, do noi goi quan ly vong doi/revoke) hien
+ * thi dung anh nguoi dung vua chon thay vi chi ten file + icon check - fixed height 140 +
+ * object-fit cover nen anh khong bi bop meo du ty le khac nhau.
  */
-export function FileDropzone({ label, hint, accept, fileName, error, disabled, onSelect }: FileDropzoneProps) {
+export function FileDropzone({ label, hint, accept, fileName, previewUrl, error, disabled, onSelect }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   return (
@@ -35,14 +40,25 @@ export function FileDropzone({ label, hint, accept, fileName, error, disabled, o
           color: 'var(--teal-700)',
           cursor: disabled ? 'default' : 'pointer',
           opacity: disabled ? 0.6 : 1,
+          overflow: 'hidden',
+          padding: 0,
         }}
       >
-        <Icon name={fileName ? 'check-circle-2' : 'plus'} size={22} />
-        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 'var(--fw-bold)' }}>{fileName || label}</span>
-        {!fileName && hint && (
-          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 'var(--fw-regular)' }}>{hint}</span>
-        )}
+        {previewUrl
+          ? <img src={previewUrl} alt={fileName || label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : (
+              <>
+                <Icon name={fileName ? 'check-circle-2' : 'plus'} size={22} />
+                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 'var(--fw-bold)' }}>{fileName || label}</span>
+                {!fileName && hint && (
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 'var(--fw-regular)' }}>{hint}</span>
+                )}
+              </>
+            )}
       </button>
+      {previewUrl && fileName && (
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', textAlign: 'center' }}>{fileName}</span>
+      )}
       <input
         ref={inputRef}
         type="file"

@@ -1,6 +1,5 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.tsx'
-import { KycPage } from '../pages/KycPage.tsx'
 import { LandingPage } from '../pages/LandingPage.tsx'
 import { LoginPage } from '../pages/LoginPage.tsx'
 import { NotFoundPage } from '../pages/NotFoundPage.tsx'
@@ -51,14 +50,9 @@ function App() {
             </RoleGuard>
           )}
         />
-        <Route
-          path="/xac-thuc-danh-tinh"
-          element={(
-            <RoleGuard allow={['tasker']}>
-              <KycPage />
-            </RoleGuard>
-          )}
-        />
+        {/* Xac thuc danh tinh (KYC) da gop vao trang Ho so ky nang (/ho-so-nang-luc) -
+            giu redirect cho link/bookmark cu. */}
+        <Route path="/xac-thuc-danh-tinh" element={<Navigate to="/ho-so-nang-luc" replace />} />
         <Route
           path="/ho-so-nang-luc"
           element={(

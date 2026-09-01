@@ -14,23 +14,39 @@ export interface ProfileResponse {
   fullName: string | null
   avatarUrl: string | null
   addressText: string | null
+  bio: string | null
   operatingArea: string | null
   locationLat: number | null
   locationLng: number | null
   kycStatus: KycStatus
 }
 
+// Mot nhom dich vu da VERIFIED, dung de hien badge "Da xac minh" tren ho so cong khai -
+// xem PublicVerifiedSkillResponse.java o backend.
+export interface PublicVerifiedSkillResponse {
+  categoryId: string
+  categoryName: string
+  verifiedAt: string
+}
+
+// bio la cong khai (khac addressText/toa do) - doan gioi thieu ban than nguoi dung chu dong
+// viet de nguoi khac xem, xem PublicProfileResponse.java o backend. availability la lich
+// ranh trong tuan cua Tasker (thu + khung gio), cap nhat ngay khi Tasker sua Lich lam viec.
 export interface PublicProfileResponse {
   accountId: string
   fullName: string | null
   avatarUrl: string | null
+  bio: string | null
   operatingArea: string | null
+  verifiedSkills: PublicVerifiedSkillResponse[]
+  availability: AvailabilitySlotResponse[]
 }
 
 export interface UpdateProfilePayload {
   fullName?: string
   avatarUrl?: string
   addressText?: string
+  bio?: string
   operatingArea?: string
   locationLat?: number
   locationLng?: number
@@ -198,6 +214,29 @@ export function submitSkill(payload: SubmitSkillPayload) {
 /** Danh sach moi category chinh chu da khai bao, kem trang thai chung chi gan nhat. */
 export function getMySkills() {
   return apiFetch<TaskerSkillResponse[]>('/users/me/tasker-skills')
+}
+
+// Khop dung CertificationReviewResponse.java o backend - dung chung cho Admin xet duyet va
+// chinh chu Tasker tu xem lai qua nut "Xem chi tiet".
+export interface CertificationDetailResponse {
+  id: string
+  certificateTypeId: string
+  certificateNumber: string | null
+  issuingAuthority: string | null
+  issuedDate: string | null
+  expiryDate: string | null
+  fileViewUrl: string
+  experienceProofUrl: string | null
+  claimedExperienceYears: number | null
+  status: CertificationStatus
+  rejectionReason: string | null
+  submittedAt: string
+  reviewedAt: string | null
+}
+
+/** Chinh chu Tasker tu xem lai toan bo lich su nop chung chi cua minh cho 1 category - dung cho nut "Xem chi tiet". */
+export function getMyCertifications(categoryId: string) {
+  return apiFetch<CertificationDetailResponse[]>(`/users/me/tasker-skills/${categoryId}/certifications`)
 }
 
 // ---------------------------------------------------------------------------

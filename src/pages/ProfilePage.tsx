@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
 import { Avatar } from '@ds/components/core/Avatar'
 import { Button } from '@ds/components/core/Button'
@@ -9,13 +9,17 @@ import { Input } from '@ds/components/forms/Input'
 import { Textarea } from '@ds/components/forms/Textarea'
 import { AppShell } from '../components/AppShell.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
+import { PasswordInput } from '../features/auth/PasswordInput.tsx'
 import { createAvatarUploadUrl, getMyProfile, updateMyProfile } from '../api/users.ts'
 import type { ProfileResponse } from '../api/users.ts'
+import { changePassword } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 import { useProfileStore } from '../stores/useProfileStore.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
+
+const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/
 
 // Whitelist khop dung common/storage/ImageContentTypes.java (avatar dung chung whitelist nay).
 const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -29,6 +33,7 @@ const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp']
  * fullName/operatingArea bat buoc o lan tao ho so dau tien.
  */
 export function ProfilePage() {
+  const navigate = useNavigate()
   const accountId = useAuthStore((state) => state.session?.account.id)
 
   const [loading, setLoading] = useState(true)
@@ -38,6 +43,7 @@ export function ProfilePage() {
   const [fullName, setFullName] = useState('')
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [addressText, setAddressText] = useState('')
+  const [bio, setBio] = useState('')
   const [operatingArea, setOperatingArea] = useState('')
   const [locationLat, setLocationLat] = useState('')
   const [locationLng, setLocationLng] = useState('')
@@ -55,10 +61,19 @@ export function ProfilePage() {
   const [geocoding, setGeocoding] = useState(false)
   const [geocodeError, setGeocodeError] = useState('')
 
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [passwordErrors, setPasswordErrors] = useState<{ currentPassword?: string, newPassword?: string, confirm?: string }>({})
+  const [passwordFormError, setPasswordFormError] = useState('')
+  const [passwordBusy, setPasswordBusy] = useState(false)
+
   const applyProfile = (profile: ProfileResponse) => {
     setFullName(profile.fullName ?? '')
     setAvatarUrl(profile.avatarUrl)
     setAddressText(profile.addressText ?? '')
+    setBio(profile.bio ?? '')
     setOperatingArea(profile.operatingArea ?? '')
     setLocationLat(profile.locationLat != null ? String(profile.locationLat) : '')
     setLocationLng(profile.locationLng != null ? String(profile.locationLng) : '')
@@ -163,6 +178,7 @@ export function ProfilePage() {
         fullName: fullName.trim(),
         avatarUrl: avatarUrl ?? undefined,
         addressText: addressText.trim() || undefined,
+        bio: bio.trim() || undefined,
         operatingArea: operatingArea.trim(),
         locationLat: locationLat.trim() ? Number(locationLat) : undefined,
         locationLng: locationLng.trim() ? Number(locationLng) : undefined,
@@ -174,6 +190,35 @@ export function ProfilePage() {
       setFormError(error instanceof ApiError ? error.message : 'Không lưu được hồ sơ. Kiểm tra mạng rồi thử lại.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Doi mat khau khi da dang nhap - can mat khau hien tai, khac han luong "quen mat khau"
+   * (dung OTP email, khong dang nhap). Backend thu hoi toan bo refresh token sau khi doi
+   * thanh cong (xem AuthService.changePassword), nen FE tu logout va dua ve /dang-nhap,
+   * khong the tiep tuc dung phien hien tai vi cookie refresh_token da bi vo hieu.
+   */
+  const handleChangePassword = async () => {
+    const nextErrors: typeof passwordErrors = {}
+    if (!currentPassword) nextErrors.currentPassword = 'Nhập mật khẩu hiện tại.'
+    if (!newPassword) nextErrors.newPassword = 'Nhập mật khẩu mới.'
+    else if (!PASSWORD_PATTERN.test(newPassword)) nextErrors.newPassword = 'Cần ít nhất 8 ký tự, có chữ hoa, chữ thường và số.'
+    if (!confirmNewPassword) nextErrors.confirm = 'Nhập lại mật khẩu mới.'
+    else if (confirmNewPassword !== newPassword) nextErrors.confirm = 'Hai mật khẩu chưa khớp nhau.'
+    setPasswordErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+
+    setPasswordFormError('')
+    setPasswordBusy(true)
+    try {
+      await changePassword({ currentPassword, newPassword, confirmNewPassword })
+      useAuthStore.getState().logout()
+      navigate('/dang-nhap', { state: { justReset: true }, replace: true })
+    } catch (error) {
+      setPasswordFormError(error instanceof ApiError ? error.message : 'Không đổi được mật khẩu. Kiểm tra mạng rồi thử lại.')
+    } finally {
+      setPasswordBusy(false)
     }
   }
 
@@ -234,6 +279,10 @@ export function ProfilePage() {
                   <Textarea rows={2} value={addressText} onChange={(e) => setAddressText(e.target.value)} disabled={busy} />
                 </Field>
 
+                <Field label="Giới thiệu bản thân" hint="Không bắt buộc, hiển thị công khai trên hồ sơ của bạn">
+                  <Textarea rows={4} maxLength={1000} value={bio} onChange={(e) => setBio(e.target.value)} disabled={busy} />
+                </Field>
+
                 <Field label="Toạ độ" hint="Chọn trên bản đồ bên phải hoặc dùng vị trí hiện tại — không gõ tay được. Không bắt buộc.">
                   <div className="flex gap-3 items-start flex-wrap">
                     <Input
@@ -267,6 +316,49 @@ export function ProfilePage() {
                 <Button variant="primary" size="lg" disabled={busy} onClick={handleSubmit} style={{ alignSelf: 'flex-start' }}>
                   {busy ? 'Đang lưu…' : 'Lưu thay đổi'}
                 </Button>
+              </Card>
+
+              <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+                <div className="flex flex-col gap-1">
+                  <strong style={{ fontSize: 'var(--fs-h3)' }}>Đổi mật khẩu</strong>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Đổi xong bạn sẽ cần đăng nhập lại trên thiết bị này.</span>
+                </div>
+
+                {passwordFormError && <Alert tone="danger" title="Không đổi được mật khẩu">{passwordFormError}</Alert>}
+
+                <div className="flex flex-col gap-4" onKeyDown={(e) => { if (e.key === 'Enter' && !passwordBusy) void handleChangePassword() }}>
+                  <PasswordInput
+                    label="Mật khẩu hiện tại"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    error={passwordErrors.currentPassword}
+                    disabled={passwordBusy}
+                    show={showPassword}
+                    onToggleShow={() => setShowPassword((v) => !v)}
+                  />
+                  <PasswordInput
+                    label="Mật khẩu mới"
+                    placeholder="Ít nhất 8 ký tự, có chữ hoa, chữ thường và số"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    error={passwordErrors.newPassword}
+                    disabled={passwordBusy}
+                    show={showPassword}
+                    onToggleShow={() => setShowPassword((v) => !v)}
+                  />
+                  <PasswordInput
+                    label="Nhập lại mật khẩu mới"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    error={passwordErrors.confirm}
+                    disabled={passwordBusy}
+                    show={showPassword}
+                    onToggleShow={() => setShowPassword((v) => !v)}
+                  />
+                  <Button variant="secondary" size="lg" disabled={passwordBusy} onClick={handleChangePassword} style={{ alignSelf: 'flex-start' }}>
+                    {passwordBusy ? 'Đang đổi…' : 'Đổi mật khẩu'}
+                  </Button>
+                </div>
               </Card>
             </div>
 

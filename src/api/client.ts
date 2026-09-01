@@ -33,7 +33,13 @@ function refreshSession(): Promise<boolean> {
         if (!response.ok) return false
         const payload: ApiEnvelope<TokenResponse> | null = await response.json().catch(() => null)
         if (!payload?.success || !payload.data) return false
-        useAuthStore.getState().setSession(sessionFromTokenResponse(payload.data))
+        // Giu nguyen vai tro dang xem hien tai (Poster/Tasker) - day la xoay vong am tham
+        // giua luc nguoi dung dang thao tac (access token het han giua chung), khac
+        // AuthBootstrap luc khoi dong trang: khong truyen activeRole se khien setSession()
+        // tu roi ve mac dinh Poster, dang thao tac o trang gioi han Tasker se bi RoleGuard
+        // day di ngay lap tuc.
+        const currentRole = useAuthStore.getState().activeRole
+        useAuthStore.getState().setSession(sessionFromTokenResponse(payload.data), currentRole ?? undefined)
         return true
       })
       .catch(() => false)

@@ -61,3 +61,8 @@ export function forgotPassword(payload: { email: string }) {
 export function resetPassword(payload: { email: string, otp: string, newPassword: string, confirmNewPassword: string }) {
   return apiFetch<void>('/auth/reset-password', { method: 'POST', body: payload })
 }
+
+/** Doi mat khau khi da dang nhap (can access token) - khac resetPassword, khong dung OTP. Thanh cong se thu hoi phien hien tai (refresh token cookie), FE phai tu logout/dieu huong ve dang nhap. */
+export function changePassword(payload: { currentPassword: string, newPassword: string, confirmNewPassword: string }) {
+  return apiFetch<void>('/auth/change-password', { method: 'POST', body: payload })
+}
