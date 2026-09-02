@@ -4,7 +4,7 @@ import { refresh } from '../api/auth.ts'
 // lan dau) - xem authBroadcast.ts. AuthBootstrap la noi chac chan mount o moi trang, hop
 // ly nhat de dam bao listener luon san sang bat ke route nao dang mo.
 import '../stores/authBroadcast.ts'
-import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
+import { readPersistedActiveRole, sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
 
 /**
  * Chay dung mot lan luc app khoi dong: thu xoay vong phien bang cookie httpOnly
@@ -33,7 +33,14 @@ export function AuthBootstrap() {
 
     refresh()
       .then((tokens) => {
-        setSession(sessionFromTokenResponse(tokens))
+        const session = sessionFromTokenResponse(tokens)
+        // Khoi phuc dung vai tro dang xem truoc F5 (neu tai khoan van con giu vai tro do) -
+        // khong thi setSession() tu roi ve mac dinh Poster, khien cac trang gioi han theo
+        // vai tro Tasker (RoleGuard allow=['tasker']) da bat ra ngay sau khi phien duoc
+        // khoi phuc, xem readPersistedActiveRole() trong useAuthStore.ts.
+        const persistedRole = readPersistedActiveRole()
+        const restoredRole = persistedRole && session.account.roles.includes(persistedRole) ? persistedRole : undefined
+        setSession(session, restoredRole)
       })
       .catch(() => {
         // Khong co phien cu hop le - giu session null, khong bao loi cho nguoi dung.
