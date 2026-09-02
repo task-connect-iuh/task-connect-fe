@@ -240,7 +240,7 @@ export function ProfilePage() {
 
               <Card padding="var(--sp-6)" style={{ display: 'flex', gap: 'var(--sp-5)', alignItems: 'center' }}>
                 <div className="relative flex-none">
-                  <Avatar name={fullName || 'Chưa đặt tên'} src={avatarUrl ?? undefined} size={80} />
+                  <Avatar name={fullName || 'Tài khoản'} src={avatarUrl ?? undefined} size={80} />
                 </div>
                 <div className="flex-1 flex flex-col gap-2">
                   <Button variant="secondary" size="sm" icon="image-up" disabled={avatarUploading} onClick={() => document.getElementById('avatar-file-input')?.click()}>
