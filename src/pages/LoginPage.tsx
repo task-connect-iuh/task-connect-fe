@@ -14,6 +14,14 @@ import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.t
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 
+/**
+ * Tu lan sai mat khau lien tiep thu 3 (o form nay, khong phai so lieu that tu backend -
+ * xem ghi chu tai handleSubmit) canh bao truoc khi tai khoan bi khoa. KHONG doc so nay tu
+ * backend: backend chi tra cung mot AUTH-401-INVALID_CREDENTIALS bat ke email co ton tai
+ * hay khong, de khong lo cho ke tan cong biet email nao da dang ky (xem PROGRESS.md).
+ */
+const FAILED_ATTEMPT_WARNING_THRESHOLD = 3
+
 /** UC02 - dang nhap bang email va mat khau, dieu huong theo vai tro sau khi thanh cong. */
 export function LoginPage() {
   const navigate = useNavigate()
@@ -27,6 +35,7 @@ export function LoginPage() {
   const [passwordError, setPasswordError] = useState('')
   const [locked, setLocked] = useState(false)
   const [formError, setFormError] = useState('')
+  const [failedAttempts, setFailedAttempts] = useState(0)
   const [busy, setBusy] = useState(false)
   const justReset = Boolean((location.state as { justReset?: boolean } | null)?.justReset)
   const justVerified = Boolean((location.state as { justVerified?: boolean } | null)?.justVerified)
@@ -91,6 +100,12 @@ export function LoginPage() {
         })
       } else if (error instanceof ApiError) {
         setFormError(error.message)
+        // Dem so lan sai lien tiep NGAY TAI FORM NAY de canh bao truoc khi khoa - khong
+        // suy ra tu noi dung phan hoi backend (message luon giong nhau du email co ton tai
+        // hay khong, tranh lo thong tin tai khoan - xem ghi chu tren FAILED_ATTEMPT_WARNING_THRESHOLD).
+        if (error.code === 'AUTH-401-INVALID_CREDENTIALS') {
+          setFailedAttempts((count) => count + 1)
+        }
       } else {
         setFormError('Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.')
       }
@@ -133,6 +148,12 @@ export function LoginPage() {
           <Alert tone="danger" title="Không đăng nhập được">{formError}</Alert>
         )}
 
+        {formError && !locked && failedAttempts >= FAILED_ATTEMPT_WARNING_THRESHOLD && (
+          <Alert tone="warning" title="Bạn đã nhập sai nhiều lần liên tiếp">
+            Nếu tiếp tục sai, tài khoản sẽ bị tạm khoá 15 phút sau lần sai thứ 5. Kiểm tra lại mật khẩu hoặc dùng &quot;Quên mật khẩu?&quot; bên dưới.
+          </Alert>
+        )}
+
         <div className="flex flex-col gap-4">
           <Field label="Email" error={emailError}>
             <Input
@@ -140,7 +161,10 @@ export function LoginPage() {
               type="email"
               placeholder="mai.nguyen@email.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                setFailedAttempts(0)
+              }}
               error={!!emailError}
               disabled={locked || busy}
             />
