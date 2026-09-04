@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@ds/components/core/Button'
 import { Field } from '@ds/components/forms/Field'
 import { Input } from '@ds/components/forms/Input'
@@ -17,7 +17,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
  */
 export function ForgotPasswordPage() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const location = useLocation()
+  const [email, setEmail] = useState((location.state as { email?: string } | null)?.email ?? '')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -34,7 +35,10 @@ export function ForgotPasswordPage() {
     setBusy(true)
     try {
       await forgotPassword({ email: email.trim() })
-      navigate('/xac-minh', { state: { mode: 'reset', email: email.trim() }, replace: true })
+      navigate('/xac-minh', {
+        state: { mode: 'reset', email: email.trim(), backPath: '/quen-mat-khau', backState: { email: email.trim() } },
+        replace: true,
+      })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.')
     } finally {

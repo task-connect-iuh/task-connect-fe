@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import logoInverse from '@ds/assets/logo-lockup-inverse.svg'
 import { Icon } from '@ds/components/core/Icon'
 
@@ -6,6 +7,11 @@ interface AuthLayoutProps {
   /** 'signup' dung cho man Dang ky va Nhap ma xac minh, 'login' cho cac man con lai -
    *  khop dung cach chia panel trong @ds/ui_kits/auth/AuthScreens.dc.html. */
   variant: 'login' | 'signup'
+  /** Bam logo hoac nut goc-tren-ben-phai de ve trang chu (/) - CHI bat o Dang nhap va
+   *  Dang ky theo yeu cau nguoi dung. Man Xac minh/Quen mat khau/Dat lai mat khau cung dung
+   *  AuthLayout nhung KHONG bat: nhung man do dang giua chung mot luong nhieu buoc (OTP da
+   *  gui, dang cho nhap), thoat ngang ve trang chu de mat du lieu/OTP hon la huu ich. */
+  homeLink?: boolean
   children: ReactNode
 }
 
@@ -22,14 +28,38 @@ const SIGNUP_STEPS = [
 ]
 
 /** Khung hai cot dung chung cho toan bo man Auth: panel thuong hieu ben trai, form ben phai. */
-export function AuthLayout({ variant, children }: AuthLayoutProps) {
+export function AuthLayout({ variant, homeLink = false, children }: AuthLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col md:flex-row items-stretch bg-paper">
+      {homeLink && (
+        <Link
+          to="/"
+          className="tc-home-link flex items-center gap-2"
+          style={{
+            position: 'fixed', top: 24, right: 24, zIndex: 40,
+            padding: 'var(--sp-2) var(--sp-4)', borderRadius: 'var(--r-pill)',
+            border: 'var(--bw) solid var(--border)',
+            color: 'var(--text-body)', fontSize: 'var(--fs-sm)', fontWeight: 'var(--fw-semibold)',
+            boxShadow: 'var(--shadow-raise)',
+          }}
+        >
+          <Icon name="house" size={16} />
+          Về trang chủ
+        </Link>
+      )}
       <aside
         className="w-full md:w-1/2 flex flex-col justify-between gap-8 p-8 md:p-10"
         style={{ background: 'var(--teal-900)', color: 'var(--on-deep)', borderRadius: '0 var(--r-xl) var(--r-xl) 0' }}
       >
-        <img src={logoInverse} alt="TaskConnect" className="w-auto self-start" style={{ height: 104 }} />
+        {homeLink
+          ? (
+              <Link to="/" className="tc-auth-logo-link self-start">
+                <img src={logoInverse} alt="TaskConnect" className="w-auto" style={{ height: 104 }} />
+              </Link>
+            )
+          : (
+              <img src={logoInverse} alt="TaskConnect" className="w-auto self-start" style={{ height: 104 }} />
+            )}
 
         {variant === 'login'
           ? (
@@ -110,7 +140,10 @@ export function AuthLayout({ variant, children }: AuthLayoutProps) {
       </aside>
 
       <main className="flex-1 flex items-center justify-center p-8">
-        <div className="w-full max-w-content flex flex-col gap-5">
+        {/* 520px khop dung AuthScreens.dc.html (ui_kits/auth) - max-w-content (680px, dung
+            chung cho form khac) rong hon mock, lam cac o input (nhat la cap Email/So dien
+            thoai, Mat khau/Xac nhan mat khau) trai dai hon thiet ke tham chieu. */}
+        <div className="w-full max-w-[520px] flex flex-col gap-5">
           {children}
         </div>
       </main>
