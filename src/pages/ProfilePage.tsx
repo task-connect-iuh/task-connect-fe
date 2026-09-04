@@ -7,6 +7,7 @@ import { Card } from '@ds/components/core/Card'
 import { Field } from '@ds/components/forms/Field'
 import { Input } from '@ds/components/forms/Input'
 import { Textarea } from '@ds/components/forms/Textarea'
+import { AddressAutocomplete } from '../components/AddressAutocomplete.tsx'
 import { AppShell } from '../components/AppShell.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
 import { PasswordInput } from '../features/auth/PasswordInput.tsx'
@@ -16,7 +17,9 @@ import { changePassword } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 import { useProfileStore } from '../stores/useProfileStore.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
+import type { AddressSuggestion } from '../utils/geocoding.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/
@@ -53,9 +56,8 @@ export function ProfilePage() {
 
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [avatarError, setAvatarError] = useState('')
-  const [fieldErrors, setFieldErrors] = useState<{ fullName?: string, operatingArea?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{ fullName?: string, operatingArea?: string, address?: string }>({})
   const [formError, setFormError] = useState('')
-  const [savedMessage, setSavedMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
   const [geocoding, setGeocoding] = useState(false)
@@ -152,6 +154,33 @@ export function ProfilePage() {
     }
   }
 
+  /**
+   * Ap dung 1 goi y duoc chon tu dropdown autocomplete (go dia chi kieu GrabFood, xem
+   * AddressAutocomplete.tsx) - khac applyPickedLocation: khong can goi lai reverseGeocode vi
+   * searchAddress() da tra du addressText/operatingArea/toa do va da loc san chi con ket qua
+   * Viet Nam (xem utils/geocoding.ts), nen luon la lua chon hop le. resetSignal van tang de
+   * ep LocationPickerMap chay lai effect dong bo ke ca khi toa do trung gia tri cu.
+   */
+  const applySuggestion = (suggestion: AddressSuggestion) => {
+    setGeocodeError('')
+    setLocationLat(suggestion.lat.toFixed(6))
+    setLocationLng(suggestion.lng.toFixed(6))
+    setAddressText(suggestion.addressText)
+    if (suggestion.operatingArea) setOperatingArea(suggestion.operatingArea)
+    setLocationResetSignal((n) => n + 1)
+    setFieldErrors((prev) => ({ ...prev, address: undefined }))
+  }
+
+  /**
+   * AddressAutocomplete bao ve day khi o Dia chi dang o trang thai "tim khong ra goi y nao
+   * cho van ban dang go" (xem Javadoc component do) - luu vao fieldErrors.address de Field
+   * hien thong bao va handleSubmit chan nut Luu, tranh bao "da luu thanh cong" trong khi dia
+   * chi that ra khong doi (van la gia tri cu).
+   */
+  const handleAddressValidity = (invalid: boolean) => {
+    setFieldErrors((prev) => ({ ...prev, address: invalid ? 'Chưa tìm được địa chỉ hợp lệ.' : undefined }))
+  }
+
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       setFormError('Trình duyệt này không hỗ trợ lấy vị trí hiện tại.')
@@ -164,14 +193,16 @@ export function ProfilePage() {
   }
 
   const handleSubmit = async () => {
-    const nextErrors: typeof fieldErrors = {}
+    // Giu nguyen loi "address" (bao tu AddressAutocomplete.onValidityChange, xem
+    // applySuggestion/handleAddressValidity ben duoi) - nextErrors chi tinh lai
+    // fullName/operatingArea, khong duoc ghi de mat trang thai loi dia chi dang co.
+    const nextErrors: typeof fieldErrors = { address: fieldErrors.address }
     if (!fullName.trim()) nextErrors.fullName = 'Nhập họ tên.'
     if (!operatingArea.trim()) nextErrors.operatingArea = 'Nhập khu vực hoạt động.'
     setFieldErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
+    if (nextErrors.fullName || nextErrors.operatingArea || nextErrors.address) return
 
     setFormError('')
-    setSavedMessage('')
     setBusy(true)
     try {
       const updated = await updateMyProfile({
@@ -185,7 +216,7 @@ export function ProfilePage() {
       })
       applyProfile(updated)
       setIsNewProfile(false)
-      setSavedMessage('Đã lưu hồ sơ.')
+      useToastStore.getState().pushToast('success', 'Đã lưu hồ sơ.')
     } catch (error) {
       setFormError(error instanceof ApiError ? error.message : 'Không lưu được hồ sơ. Kiểm tra mạng rồi thử lại.')
     } finally {
@@ -236,7 +267,6 @@ export function ProfilePage() {
                 </Alert>
               )}
               {formError && <Alert tone="danger" title="Không lưu được hồ sơ">{formError}</Alert>}
-              {savedMessage && <Alert tone="success" title={savedMessage} />}
 
               <Card padding="var(--sp-6)" style={{ display: 'flex', gap: 'var(--sp-5)', alignItems: 'center' }}>
                 <div className="relative flex-none">
@@ -271,19 +301,24 @@ export function ProfilePage() {
                   <Input value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={busy} error={!!fieldErrors.fullName} />
                 </Field>
 
-                <Field label="Khu vực hoạt động" required error={fieldErrors.operatingArea} hint="Ví dụ: Quận 3, TP. Hồ Chí Minh">
-                  <Input value={operatingArea} onChange={(e) => setOperatingArea(e.target.value)} disabled={busy} error={!!fieldErrors.operatingArea} />
+                <Field label="Khu vực hoạt động" required error={fieldErrors.operatingArea} hint="Tự động điền khi bạn chọn địa chỉ ở dưới — không gõ tay được">
+                  <Input value={operatingArea} readOnly disabled={busy} error={!!fieldErrors.operatingArea} />
                 </Field>
 
-                <Field label="Địa chỉ" hint="Không bắt buộc, chỉ bạn nhìn thấy">
-                  <Textarea rows={2} value={addressText} onChange={(e) => setAddressText(e.target.value)} disabled={busy} />
+                <Field label="Địa chỉ" hint="Không bắt buộc, chỉ bạn nhìn thấy — gõ để tìm và chỉ chọn từ danh sách gợi ý, không gõ tay giữ lại được">
+                  <AddressAutocomplete
+                    value={addressText}
+                    onSelectSuggestion={applySuggestion}
+                    onValidityChange={handleAddressValidity}
+                    disabled={busy}
+                  />
                 </Field>
 
                 <Field label="Giới thiệu bản thân" hint="Không bắt buộc, hiển thị công khai trên hồ sơ của bạn">
                   <Textarea rows={4} maxLength={1000} value={bio} onChange={(e) => setBio(e.target.value)} disabled={busy} />
                 </Field>
 
-                <Field label="Toạ độ" hint="Chọn trên bản đồ bên phải hoặc dùng vị trí hiện tại — không gõ tay được. Không bắt buộc.">
+                <Field label="Toạ độ" hint="Chọn trên bản đồ bên phải, dùng vị trí hiện tại, hoặc chọn từ gợi ý ở ô Địa chỉ — không gõ tay được ở đây. Không bắt buộc.">
                   <div className="flex gap-3 items-start flex-wrap">
                     <Input
                       style={{ maxWidth: 160 }}

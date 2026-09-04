@@ -14,6 +14,8 @@ import { FileDropzone } from '../components/FileDropzone.tsx'
 import { TimeSelect } from '../components/TimeSelect.tsx'
 import {
   addAvailabilitySlot,
+  cancelMyCertification,
+  cancelMyKyc,
   createCertificateUploadUrl,
   createKycUploadUrl,
   deleteAvailabilitySlot,
@@ -37,6 +39,7 @@ import type {
   TaskerSkillResponse,
 } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 import { formatDate } from '../utils/formatDate.ts'
 import { DAY_LABELS, DAY_OPTIONS } from '../utils/dayOfWeek.ts'
@@ -73,18 +76,21 @@ const CERTIFICATION_STATUS_TONE: Record<CertificationStatus, 'warning' | 'succes
   APPROVED: 'success',
   REJECTED: 'danger',
   EXPIRED: 'neutral',
+  CANCELLED: 'neutral',
 }
 const CERTIFICATION_STATUS_LABEL: Record<CertificationStatus, string> = {
   PENDING_REVIEW: 'Chờ duyệt',
   APPROVED: 'Đã duyệt',
   REJECTED: 'Bị từ chối',
   EXPIRED: 'Hết hạn',
+  CANCELLED: 'Đã huỷ',
 }
 
 function skillStatusBadge(skill: TaskerSkillResponse | undefined) {
   if (!skill) return <Badge tone="neutral">Chưa khai báo</Badge>
   if (skill.verificationStatus === 'VERIFIED') return <Badge tone="success" icon="badge-check">Đã xác minh</Badge>
   if (skill.verificationStatus === 'REJECTED') return <Badge tone="danger" icon="shield-x">Bị từ chối</Badge>
+  if (skill.verificationStatus === 'CANCELLED') return <Badge tone="neutral" icon="x">Đã huỷ</Badge>
   return <Badge tone="warning" icon="shield-question">Chờ duyệt</Badge>
 }
 
@@ -111,7 +117,27 @@ function KycSection({ latest, onSubmitted }: KycSectionProps) {
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const canSubmit = !latest || latest.status === 'REJECTED'
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+
+  const canSubmit = !latest || latest.status === 'REJECTED' || latest.status === 'CANCELLED'
+
+  const handleCancel = async () => {
+    if (!latest) return
+    setCancelBusy(true)
+    setCancelError('')
+    try {
+      await cancelMyKyc(latest.id)
+      setShowCancelConfirm(false)
+      useToastStore.getState().pushToast('success', 'Đã huỷ hồ sơ xác minh danh tính.')
+      onSubmitted()
+    } catch (error) {
+      setCancelError(error instanceof ApiError ? error.message : 'Không huỷ được hồ sơ. Kiểm tra mạng rồi thử lại.')
+    } finally {
+      setCancelBusy(false)
+    }
+  }
 
   const handleUpload = async (side: 'FRONT' | 'BACK', file: File) => {
     setFieldErrors((prev) => ({ ...prev, [side === 'FRONT' ? 'front' : 'back']: undefined }))
@@ -168,6 +194,7 @@ function KycSection({ latest, onSubmitted }: KycSectionProps) {
       if (backPreviewUrl) URL.revokeObjectURL(backPreviewUrl)
       setFrontPreviewUrl(null)
       setBackPreviewUrl(null)
+      useToastStore.getState().pushToast('success', 'Nộp hồ sơ xác minh danh tính thành công, đang chờ xét duyệt.')
       onSubmitted()
     } catch (error) {
       setFormError(error instanceof ApiError ? error.message : 'Không nộp được hồ sơ. Kiểm tra mạng rồi thử lại.')
@@ -179,9 +206,32 @@ function KycSection({ latest, onSubmitted }: KycSectionProps) {
   if (!canSubmit) {
     if (latest?.status === 'VERIFYING') {
       return (
-        <Alert tone="info" title="Hồ sơ xác thực danh tính đang được xử lý">
-          Hồ sơ của bạn đang chờ xét duyệt, thường dưới 24 giờ làm việc.
-        </Alert>
+        <>
+          <Card padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+            <Alert tone="info" title="Hồ sơ xác thực danh tính đang được xử lý">
+              Hồ sơ của bạn đang chờ xét duyệt, thường dưới 24 giờ làm việc.
+            </Alert>
+            {cancelError && <Alert tone="danger" title="Không huỷ được hồ sơ">{cancelError}</Alert>}
+            <Button variant="danger" size="sm" icon="x" disabled={cancelBusy} onClick={() => setShowCancelConfirm(true)} style={{ alignSelf: 'flex-start' }}>
+              Huỷ hồ sơ
+            </Button>
+          </Card>
+          {showCancelConfirm && (
+            <Dialog
+              title="Huỷ hồ sơ xác thực danh tính?"
+              subtitle="Bạn sẽ cần nộp lại từ đầu nếu muốn xác thực danh tính sau này."
+              onClose={() => setShowCancelConfirm(false)}
+              footer={(
+                <>
+                  <Button variant="secondary" style={{ flex: 1 }} onClick={() => setShowCancelConfirm(false)} disabled={cancelBusy}>Đóng</Button>
+                  <Button variant="danger" style={{ flex: 1 }} disabled={cancelBusy} onClick={() => void handleCancel()}>
+                    {cancelBusy ? 'Đang huỷ…' : 'Huỷ hồ sơ'}
+                  </Button>
+                </>
+              )}
+            />
+          )}
+        </>
       )
     }
     return (
@@ -236,7 +286,7 @@ function KycSection({ latest, onSubmitted }: KycSectionProps) {
       </Field>
 
       <Button size="lg" icon="shield-check" disabled={busy || uploadingSide !== null} onClick={handleSubmit} style={{ alignSelf: 'flex-start' }}>
-        {busy ? 'Đang gửi…' : latest?.status === 'REJECTED' ? 'Gửi lại hồ sơ' : 'Gửi hồ sơ xác thực'}
+        {busy ? 'Đang gửi…' : (latest?.status === 'REJECTED' || latest?.status === 'CANCELLED') ? 'Gửi lại hồ sơ' : 'Gửi hồ sơ xác thực'}
       </Button>
     </Card>
   )
@@ -325,6 +375,7 @@ function SkillForm({ category, existing, onDone, onCancel }: SkillFormProps) {
         expiryDate: expiryDate || undefined,
         fileKey: file.key,
       })
+      useToastStore.getState().pushToast('success', 'Nộp hồ sơ kỹ năng thành công, đang chờ xét duyệt.')
       onDone()
     } catch (error) {
       setFormError(error instanceof ApiError ? error.message : 'Không nộp được hồ sơ. Kiểm tra mạng rồi thử lại.')
@@ -485,6 +536,9 @@ export function TaskerSkillsPage() {
   const [loadError, setLoadError] = useState('')
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [detailsCategoryId, setDetailsCategoryId] = useState<string | null>(null)
+  const [cancelSkillTarget, setCancelSkillTarget] = useState<TaskerSkillResponse | null>(null)
+  const [cancelSkillBusy, setCancelSkillBusy] = useState(false)
+  const [cancelSkillError, setCancelSkillError] = useState('')
 
   const [slotDay, setSlotDay] = useState('1')
   const [slotStart, setSlotStart] = useState('08:00')
@@ -542,6 +596,7 @@ export function TaskerSkillsPage() {
     try {
       const created = await addAvailabilitySlot({ dayOfWeek: Number(slotDay), startTime: slotStart, endTime: slotEnd })
       setSlots((prev) => [...prev, created].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)))
+      useToastStore.getState().pushToast('success', 'Đã thêm khung giờ.')
     } catch (error) {
       setSlotError(error instanceof ApiError ? error.message : 'Không thêm được khung giờ.')
     } finally {
@@ -554,6 +609,7 @@ export function TaskerSkillsPage() {
     try {
       await deleteAvailabilitySlot(slotId)
       setSlots((prev) => prev.filter((slot) => slot.id !== slotId))
+      useToastStore.getState().pushToast('success', 'Đã xoá khung giờ.')
     } catch (error) {
       setSlotError(error instanceof ApiError ? error.message : 'Không xoá được khung giờ.')
     } finally {
@@ -587,10 +643,33 @@ export function TaskerSkillsPage() {
       const updated = await updateAvailabilitySlot(editingSlotId, { dayOfWeek: Number(editDay), startTime: editStart, endTime: editEnd })
       setSlots((prev) => prev.map((slot) => (slot.id === updated.id ? updated : slot)).sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)))
       setEditingSlotId(null)
+      useToastStore.getState().pushToast('success', 'Đã lưu khung giờ.')
     } catch (error) {
       setSlotError(error instanceof ApiError ? error.message : 'Không lưu được khung giờ.')
     } finally {
       setSlotBusy(false)
+    }
+  }
+
+  /**
+   * Huy lan nop chung chi dang cho duyet cua 1 category - dung latestCertificationId (luon
+   * co gia tri khi verificationStatus la PENDING, vi submitSkill luon tao dong chung chi
+   * cung luc voi ho so ky nang). Loi USR-409-SKILL... khong xay ra o day, loi thuc te co the
+   * gap la USR-409-CERTIFICATION_NOT_PENDING_REVIEW neu Admin vua duyet/tu choi dung luc.
+   */
+  const handleCancelSkill = async () => {
+    if (!cancelSkillTarget?.latestCertificationId) return
+    setCancelSkillBusy(true)
+    setCancelSkillError('')
+    try {
+      await cancelMyCertification(cancelSkillTarget.latestCertificationId)
+      setCancelSkillTarget(null)
+      useToastStore.getState().pushToast('success', 'Đã huỷ hồ sơ kỹ năng.')
+      void loadAll()
+    } catch (error) {
+      setCancelSkillError(error instanceof ApiError ? error.message : 'Không huỷ được hồ sơ. Kiểm tra mạng rồi thử lại.')
+    } finally {
+      setCancelSkillBusy(false)
     }
   }
 
@@ -645,9 +724,14 @@ export function TaskerSkillsPage() {
                                       Xem chi tiết
                                     </Button>
                                   )}
-                                  {(!skill || skill.verificationStatus === 'REJECTED') && (
+                                  {(!skill || skill.verificationStatus === 'REJECTED' || skill.verificationStatus === 'CANCELLED') && (
                                     <Button variant="secondary" size="sm" onClick={() => setSelectedCategoryId(category.id)}>
                                       {skill ? 'Nộp lại' : 'Khai báo kỹ năng'}
+                                    </Button>
+                                  )}
+                                  {skill?.verificationStatus === 'PENDING' && (
+                                    <Button variant="danger" size="sm" icon="x" onClick={() => { setCancelSkillTarget(skill); setCancelSkillError('') }}>
+                                      Huỷ
                                     </Button>
                                   )}
                                 </div>
@@ -725,6 +809,24 @@ export function TaskerSkillsPage() {
 
       {detailsCategory && detailsSkill && (
         <SkillDetailsDialog category={detailsCategory} skill={detailsSkill} onClose={() => setDetailsCategoryId(null)} />
+      )}
+
+      {cancelSkillTarget && (
+        <Dialog
+          title="Huỷ hồ sơ kỹ năng đang chờ duyệt?"
+          subtitle="Bạn sẽ cần khai báo lại từ đầu cho nhóm dịch vụ này nếu muốn nộp lại."
+          onClose={() => setCancelSkillTarget(null)}
+          footer={(
+            <>
+              <Button variant="secondary" style={{ flex: 1 }} onClick={() => setCancelSkillTarget(null)} disabled={cancelSkillBusy}>Đóng</Button>
+              <Button variant="danger" style={{ flex: 1 }} disabled={cancelSkillBusy} onClick={() => void handleCancelSkill()}>
+                {cancelSkillBusy ? 'Đang huỷ…' : 'Huỷ hồ sơ'}
+              </Button>
+            </>
+          )}
+        >
+          {cancelSkillError && <Alert tone="danger" title="Không huỷ được hồ sơ">{cancelSkillError}</Alert>}
+        </Dialog>
       )}
     </AppShell>
   )
