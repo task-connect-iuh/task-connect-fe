@@ -112,7 +112,7 @@ export function LocationPickerMap({ lat, lng, onPick, resetSignal }: LocationPic
   return (
     <div
       ref={containerRef}
-      style={{ height: 260, width: '100%', borderRadius: 'var(--r-lg)', overflow: 'hidden', border: 'var(--bw) solid var(--border)' }}
+      style={{ height: 380, width: '100%', borderRadius: 'var(--r-lg)', overflow: 'hidden', border: 'var(--bw) solid var(--border)' }}
     />
   )
 }
