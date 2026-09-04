@@ -15,6 +15,7 @@ export interface TokenResponse {
 }
 
 export interface RegisterPayload {
+  fullName: string
   email: string
   phone?: string
   password: string

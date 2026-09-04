@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "lint:ds": "oxlint -c ../task-connect-agent/.claude/skills/taskconnect-design/_adherence.oxlintrc.json src && node scripts/check-design-tokens.mjs",
+    "lint:ds": "oxlint -c ../task-connect-claude/.claude/skills/taskconnect-design/_adherence.oxlintrc.json src && node scripts/check-design-tokens.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

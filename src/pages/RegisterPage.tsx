@@ -118,6 +118,7 @@ export function RegisterPage() {
     setBusy(true)
     try {
       await register({
+        fullName: name.trim(),
         email: email.trim(),
         phone: phone.trim() || undefined,
         password,

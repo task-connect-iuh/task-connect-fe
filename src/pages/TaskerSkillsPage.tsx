@@ -198,7 +198,7 @@ function KycSection({ latest, onSubmitted }: KycSectionProps) {
     <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
       {formError && <Alert tone="danger" title="Không nộp được hồ sơ">{formError}</Alert>}
       {latest?.status === 'REJECTED' && latest.rejectionReason && (
-        <Alert tone="danger" title="Hồ sơ trước bị từ chối">{latest.rejectionReason}</Alert>
+        <Alert tone="danger" title="Hồ sơ trước bị từ chối">Lý do: {latest.rejectionReason}</Alert>
       )}
 
       <div className="flex gap-4 flex-wrap">
@@ -426,35 +426,35 @@ function SkillDetailsDialog({ category, skill, onClose }: SkillDetailsDialogProp
   return (
     <Dialog title={`Chi tiết kỹ năng — ${category.name}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
-        <Card padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-          {skillStatusBadge(skill)}
-          <Field label="Số năm kinh nghiệm đã khai"><span className="tc-num">{skill.yearsExperience}</span></Field>
-          {(skill.priceMin != null || skill.priceMax != null) && (
-            <Field label="Khoảng giá đã khai">
-              <span className="tc-num">
-                {skill.priceMin != null ? `${skill.priceMin.toLocaleString('vi-VN')}₫` : '—'}
-                {' – '}
-                {skill.priceMax != null ? `${skill.priceMax.toLocaleString('vi-VN')}₫` : '—'}
-              </span>
-            </Field>
-          )}
-          {skill.verificationStatus === 'VERIFIED' && skill.verifiedAt && (
+        {skill.verificationStatus === 'VERIFIED' && skill.verifiedAt && (
+          <Card padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+            {skillStatusBadge(skill)}
             <Field label="Xác minh bởi"><span>TaskConnect · {formatDate(skill.verifiedAt)}</span></Field>
-          )}
-        </Card>
+          </Card>
+        )}
 
         <div>
           <div className="tc-label" style={{ marginBottom: 'var(--sp-2)' }}>Lịch sử nộp chứng chỉ</div>
           {loadError && <Alert tone="danger" title="Không tải được lịch sử">{loadError}</Alert>}
           {!certifications && !loadError && <p>Đang tải…</p>}
           {certifications?.length === 0 && <EmptyState icon="award" title="Chưa có lần nộp nào" />}
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 'var(--sp-2)' }}>
             {certifications?.map((item) => (
               <Card key={item.id} padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
                 <div className="flex items-center justify-between">
                   <Badge tone={CERTIFICATION_STATUS_TONE[item.status]}>{CERTIFICATION_STATUS_LABEL[item.status]}</Badge>
                   <span className="tc-num" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{formatDate(item.submittedAt)}</span>
                 </div>
+                <Field label="Số năm kinh nghiệm"><span className="tc-num">{skill.yearsExperience}</span></Field>
+                {(skill.priceMin != null || skill.priceMax != null) && (
+                  <Field label="Khoảng giá đã khai">
+                    <span className="tc-num">
+                      {skill.priceMin != null ? `${skill.priceMin.toLocaleString('vi-VN')}₫` : '—'}
+                      {' – '}
+                      {skill.priceMax != null ? `${skill.priceMax.toLocaleString('vi-VN')}₫` : '—'}
+                    </span>
+                  </Field>
+                )}
                 {item.certificateNumber && <Field label="Số hiệu chứng chỉ"><span className="tc-num">{item.certificateNumber}</span></Field>}
                 {item.issuingAuthority && <Field label="Nơi cấp"><span>{item.issuingAuthority}</span></Field>}
                 <a href={item.fileViewUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-link)', fontWeight: 'var(--fw-bold)' }}>
@@ -638,9 +638,6 @@ export function TaskerSkillsPage() {
                                   <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
                                     Xác minh bởi TaskConnect · {formatDate(skill.verifiedAt)}
                                   </span>
-                                )}
-                                {skill?.verificationStatus === 'REJECTED' && skill.latestCertificationRejectionReason && (
-                                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--danger)' }}>{skill.latestCertificationRejectionReason}</span>
                                 )}
                                 <div className="flex gap-2 flex-wrap">
                                   {skill && (
