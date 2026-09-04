@@ -10,3 +10,42 @@
 .tc-scroll-hidden::-webkit-scrollbar {
   display: none;
 }
+
+/* Toast truot tu tren xuong khi xuat hien - xem ToastContainer.tsx. Dinh nghia keyframes
+   phai la CSS toan cuc that (khong lam duoc qua React style object), nhung thoi luong/easing
+   van doc tu token dong bo (--dur, --ease-out) qua chuoi animation truyen tu inline style,
+   nen tu dong tat theo prefers-reduced-motion nhu moi animation khac trong DS (xem motion.css). */
+@keyframes tc-toast-slide-down {
+  from {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Hover + press cho nut "Ve trang chu" (AuthLayout.tsx) va logo bam duoc (AuthLayout.tsx,
+   AppShell.tsx) - bat buoc theo 20-design-system.md ("Moi phan tu bam duoc phai co phan hoi
+   hover ro rang"), khong lam duoc qua inline style cua React vi :hover/:active la
+   pseudo-class. Background phai dat o day (khong phai inline style cua component) - inline
+   style luon thang CSS class du la pseudo-class, dat "var(--surface-card)" qua inline se lam
+   rule :hover ben duoi khong bao gio ap dung duoc. */
+.tc-home-link {
+  background: var(--surface-card);
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.tc-home-link:hover {
+  background: var(--paper-1);
+}
+.tc-home-link:active {
+  transform: translateY(1px);
+}
+.tc-logo-link {
+  display: inline-flex;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.tc-logo-link:hover {
+  opacity: 0.85;
+}

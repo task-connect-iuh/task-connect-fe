@@ -13,7 +13,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@ds': path.resolve(__dirname, '../task-connect-agent/.claude/skills/taskconnect-design'),
+      '@ds': path.resolve(__dirname, '../task-connect-claude/.claude/skills/taskconnect-design'),
       // Component DS nam ngoai repo nay nen khong co node_modules rieng: ep 'react'
       // va 'react-dom' (ke ca subpath nhu react/jsx-runtime) ve dung mot ban duy nhat
       // trong node_modules cua task-connect-fe, tranh loi khong resolve duoc khi build.

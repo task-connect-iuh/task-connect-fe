@@ -17,6 +17,13 @@ interface VerifyLocationState {
   /** Thong bao ly do vao thang man nay - vd tu dang nhap voi tai khoan UNVERIFIED, hoac
    *  tu dang ky trung email chua xac thuc. Khac voi "notice" cuc bo (xac nhan da gui lai ma). */
   entryNotice?: string
+  /** Duong dan ve khi bam "Sua lai" - do noi dieu huong toi day quyet dinh, KHONG suy tu
+   *  mode, vi mode "signup" dung chung cho ca dang ky moi lan dang nhap tai khoan UNVERIFIED
+   *  (2 truong hop can quay ve 2 trang khac nhau: /dang-ky vs /dang-nhap). */
+  backPath: string
+  /** State mang theo khi quay ve backPath, de trang do tu dien lai du lieu da nhap thay vi
+   *  bat go lai tu dau. */
+  backState?: Record<string, string>
 }
 
 const RESEND_COOLDOWN_SECONDS = 60
@@ -49,7 +56,7 @@ export function VerifyEmailPage() {
     return <Navigate to="/dang-nhap" replace />
   }
 
-  const backPath = state.mode === 'signup' ? '/dang-ky' : '/quen-mat-khau'
+  const { backPath, backState } = state
 
   const handleSubmit = async () => {
     setNotice('')
@@ -101,7 +108,7 @@ export function VerifyEmailPage() {
           </h2>
           <p className="m-0" style={{ color: 'var(--text-muted)' }}>
             Chúng tôi vừa gửi 6 chữ số đến <strong style={{ color: 'var(--text-title)' }}>{state.email}</strong>.{' '}
-            <Link to={backPath} style={{ color: 'var(--text-link)', fontWeight: 'var(--fw-bold)' }}>Sửa lại</Link>
+            <Link to={backPath} state={backState} style={{ color: 'var(--text-link)', fontWeight: 'var(--fw-bold)' }}>Sửa lại</Link>
           </p>
         </div>
 

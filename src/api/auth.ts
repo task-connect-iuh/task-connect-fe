@@ -37,6 +37,34 @@ export function login(payload: LoginPayload) {
   return apiFetch<TokenResponse>('/auth/login', { method: 'POST', body: payload })
 }
 
+/** Dang nhap hoac dang ky bang Google (ID token tu @react-oauth/google). Neu email trung mot
+ *  tai khoan mat khau da co san va chua tung gan Google, backend tra loi
+ *  AUTH-409-GOOGLE_LINK_CONFIRMATION_REQUIRED - goi confirmGoogleLink() sau khi nguoi dung xac
+ *  nhan, khong tu goi lai loginWithGoogle(). */
+export function loginWithGoogle(idToken: string) {
+  return apiFetch<TokenResponse>('/auth/google', { method: 'POST', body: { idToken } })
+}
+
+/** Xac nhan gan tai khoan Google vao tai khoan mat khau da co san, chi goi sau khi nguoi dung
+ *  dong y o man hoi lai (xem GoogleAuthButton.tsx). */
+export function confirmGoogleLink(idToken: string) {
+  return apiFetch<TokenResponse>('/auth/google/confirm-link', { method: 'POST', body: { idToken } })
+}
+
+/** Doc rieng claim "email" tu phan payload cua ID token JWT, chi de hien thi o man hoi lai
+ *  lien ket Google - khong verify chu ky (backend da lam viec do), khong dung ket qua nay cho
+ *  bat ky quyet dinh nghiep vu nao. Tra null neu token khong dung dinh dang JWT. */
+export function decodeGoogleEmail(idToken: string): string | null {
+  try {
+    const payloadSegment = idToken.split('.')[1]
+    const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(normalized)) as { email?: string }
+    return payload.email ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Xoay vong phien bang refresh token trong cookie httpOnly - khong can body. */
 export function refresh() {
   return apiFetch<TokenResponse>('/auth/refresh', { method: 'POST' })

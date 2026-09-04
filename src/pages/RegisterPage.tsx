@@ -1,15 +1,20 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
 import { Button } from '@ds/components/core/Button'
 import { Checkbox } from '@ds/components/forms/Checkbox'
 import { Field } from '@ds/components/forms/Field'
 import { Input } from '@ds/components/forms/Input'
 import { AuthLayout } from '../features/auth/AuthLayout.tsx'
+import { GoogleAuthButton } from '../features/auth/GoogleAuthButton.tsx'
 import { PasswordInput } from '../features/auth/PasswordInput.tsx'
-import { register, resendVerification } from '../api/auth.ts'
+import { register } from '../api/auth.ts'
+import type { TokenResponse } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
 import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
+import { broadcastSession } from '../stores/authBroadcast.ts'
+import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 import { suggestEmailDomain } from '../utils/emailSuggestion.ts'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
@@ -39,10 +44,16 @@ function passwordStrength(value: string) {
  */
 export function RegisterPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const setSession = useAuthStore((state) => state.setSession)
+  const pushToast = useToastStore((state) => state.pushToast)
+  // Du lieu mang ve tu man Nhap ma xac minh khi bam "Sua lai" - de khong bat nguoi dung go
+  // lai tu dau (tru mat khau, khong mang qua lai vi ly do bao mat).
+  const backState = location.state as { name?: string; email?: string; phone?: string } | null
 
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
+  const [name, setName] = useState(backState?.name ?? '')
+  const [email, setEmail] = useState(backState?.email ?? '')
+  const [phone, setPhone] = useState(backState?.phone ?? '')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -51,11 +62,8 @@ export function RegisterPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
-  // true khi backend tra AUTH-409-EMAIL_EXISTS - hien them loi tat "gui lai ma xac minh"
-  // phong truong hop day la chinh tai khoan cua nguoi dung, dang ky truoc do nhung chua
-  // xac thuc email. resendVerification khong bao gio bao loi hay tiet lo trang thai that
-  // cua tai khoan (chi thuc su gui lai khi tai khoan dang UNVERIFIED), nen an toan de goi
-  // ngay ca khi khong chac email nay co dang UNVERIFIED hay khong.
+  // true khi backend tra AUTH-409-EMAIL_EXISTS - hien them goi y dang nhap/lay lai mat khau,
+  // vi backend khong tiet lo trang thai that (ACTIVE hay UNVERIFIED) cua tai khoan trung email.
   const [emailExists, setEmailExists] = useState(false)
   // Goi y sua ten mien go nham (vd "gmail.comm") khi roi khoi o email - chi hien khi con
   // khop voi gia tri email hien tai, tu an neu nguoi dung go tiep hoac da ap dung goi y.
@@ -85,6 +93,23 @@ export function RegisterPage() {
     return Object.keys(nextErrors).length === 0
   }
 
+  // Dang ky bang Google khac dang ky bang mat khau: tai khoan Google vao thang ACTIVE, khong
+  // qua OTP - nen dang nhap that su ngay (set session, dieu huong /tong-quan) thay vi sang
+  // /xac-minh nhu register() thuong. Toast ghi "dang nhap" chu khong phai "dang ky" vi nhanh
+  // xac nhan lien ket (email da co tai khoan tu truoc) thuc chat la dang nhap vao tai khoan
+  // cu, khong phai tao moi - "dang ky thanh cong" se sai trong truong hop do.
+  const handleGoogleSuccess = (tokens: TokenResponse) => {
+    const session = sessionFromTokenResponse(tokens)
+    setSession(session)
+    broadcastSession(session)
+    pushToast('success', 'Đăng nhập thành công.')
+    navigate('/tong-quan', { replace: true })
+  }
+
+  const handleGoogleError = (error: unknown) => {
+    setFormError(error instanceof ApiError ? error.message : 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.')
+  }
+
   const handleSubmit = async () => {
     setFormError('')
     setEmailExists(false)
@@ -102,7 +127,14 @@ export function RegisterPage() {
       // Khong con session de tranh GuestGuard/RoleGuard, nen dieu huong thuong la du - tai
       // khoan moi tao la UNVERIFIED, chua co token nao ca.
       navigate('/xac-minh', {
-        state: { mode: 'signup', email: email.trim(), name: name.trim(), phone: phone.trim() },
+        state: {
+          mode: 'signup',
+          email: email.trim(),
+          name: name.trim(),
+          phone: phone.trim(),
+          backPath: '/dang-ky',
+          backState: { name: name.trim(), email: email.trim(), phone: phone.trim() },
+        },
         replace: true,
       })
     } catch (error) {
@@ -121,25 +153,6 @@ export function RegisterPage() {
     }
   }
 
-  const handleResendForExisting = async () => {
-    setBusy(true)
-    try {
-      await resendVerification({ email: email.trim() })
-    } catch {
-      // resendVerification khong bao gio bao loi that (chong do email ton tai hay khong) -
-      // van dieu huong sang man xac minh ke ca khi request mang that bai, nguoi dung con nut
-      // "Gui lai ma" o do de thu lai.
-    }
-    navigate('/xac-minh', {
-      state: {
-        mode: 'signup',
-        email: email.trim(),
-        entryNotice: 'Nếu email này chưa được xác thực, chúng tôi vừa gửi mã mới đến đó. Nhập mã để kích hoạt tài khoản.',
-      },
-    })
-    setBusy(false)
-  }
-
   const handleEmailBlur = () => {
     setEmailSuggestion(suggestEmailDomain(email.trim()))
   }
@@ -153,7 +166,7 @@ export function RegisterPage() {
   const strength = passwordStrength(password)
 
   return (
-    <AuthLayout variant="signup">
+    <AuthLayout variant="signup" homeLink>
       <div className="flex flex-col gap-6" onKeyDown={submitOnEnter(handleSubmit, busy)}>
         <div className="flex flex-col gap-2">
           <h2 className="m-0" style={{ fontSize: 'var(--fs-h1)', lineHeight: 'var(--lh-h1)', fontWeight: 'var(--fw-black)', color: 'var(--text-title)' }}>
@@ -167,38 +180,38 @@ export function RegisterPage() {
         {formError && <Alert tone="danger" title="Không tạo được tài khoản">{formError}</Alert>}
 
         <div className="flex flex-col gap-4">
-          <Field label="Họ và tên" error={errors.name}>
-            <Input icon="user" placeholder="Nguyễn Thị Mai" value={name} onChange={(e) => setName(e.target.value)} error={!!errors.name} disabled={busy} />
+          <Field label="Email" error={errors.email}>
+            <Input
+              icon="at-sign"
+              type="email"
+              placeholder="mai.nguyen@email.com"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                setEmailSuggestion(null)
+              }}
+              onBlur={handleEmailBlur}
+              error={!!errors.email}
+              disabled={busy}
+            />
+            {emailSuggestion && (
+              <p className="m-0 mt-1" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                Có phải bạn muốn nhập{' '}
+                <button
+                  type="button"
+                  onClick={applyEmailSuggestion}
+                  style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--text-link)', fontWeight: 'var(--fw-bold)', textDecoration: 'underline' }}
+                >
+                  {emailSuggestion}
+                </button>
+                ?
+              </p>
+            )}
           </Field>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Email" error={errors.email}>
-              <Input
-                icon="at-sign"
-                type="email"
-                placeholder="mai.nguyen@email.com"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value)
-                  setEmailSuggestion(null)
-                }}
-                onBlur={handleEmailBlur}
-                error={!!errors.email}
-                disabled={busy}
-              />
-              {emailSuggestion && (
-                <p className="m-0 mt-1" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
-                  Có phải bạn muốn nhập{' '}
-                  <button
-                    type="button"
-                    onClick={applyEmailSuggestion}
-                    style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--text-link)', fontWeight: 'var(--fw-bold)', textDecoration: 'underline' }}
-                  >
-                    {emailSuggestion}
-                  </button>
-                  ?
-                </p>
-              )}
+            <Field label="Họ và tên" error={errors.name}>
+              <Input icon="user" placeholder="Nguyễn Thị Mai" value={name} onChange={(e) => setName(e.target.value)} error={!!errors.name} disabled={busy} />
             </Field>
             <Field label="Số điện thoại" hint="Không bắt buộc" error={errors.phone}>
               <Input icon="phone" placeholder="0901 234 567" value={phone} onChange={(e) => setPhone(e.target.value)} error={!!errors.phone} disabled={busy} />
@@ -206,16 +219,11 @@ export function RegisterPage() {
           </div>
 
           {emailExists && (
-            <Alert tone="warning" title="Email chưa xác thực?">
-              Nếu đây là tài khoản của bạn nhưng chưa xác thực email, bấm{' '}
-              <button
-                type="button"
-                onClick={handleResendForExisting}
-                disabled={busy}
-                style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--text-link)', fontWeight: 'var(--fw-bold)', textDecoration: 'underline' }}
-              >
-                gửi lại mã xác minh
-              </button>.
+            <Alert tone="warning" title="Email này đã có tài khoản">
+              Nếu đây là tài khoản của bạn, hãy{' '}
+              <Link to="/dang-nhap" style={{ color: 'var(--text-link)', fontWeight: 'var(--fw-bold)', textDecoration: 'underline' }}>đăng nhập</Link>{' '}
+              hoặc{' '}
+              <Link to="/quen-mat-khau" style={{ color: 'var(--text-link)', fontWeight: 'var(--fw-bold)', textDecoration: 'underline' }}>lấy lại mật khẩu</Link>.
             </Alert>
           )}
 
@@ -277,6 +285,8 @@ export function RegisterPage() {
           <Button variant="primary" size="lg" block disabled={busy} onClick={handleSubmit}>
             {busy ? 'Đang gửi mã…' : 'Tạo tài khoản'}
           </Button>
+
+          <GoogleAuthButton onSuccess={handleGoogleSuccess} onError={handleGoogleError} text="signup_with" />
         </div>
       </div>
     </AuthLayout>
