@@ -12,10 +12,10 @@ import { ResetPasswordPage } from '../pages/ResetPasswordPage.tsx'
 import { TaskerSkillsPage } from '../pages/TaskerSkillsPage.tsx'
 import { TermsPage } from '../pages/TermsPage.tsx'
 import { VerifyEmailPage } from '../pages/VerifyEmailPage.tsx'
-import { ToastHost } from '../components/ToastHost.tsx'
 import { AuthBootstrap } from './AuthBootstrap.tsx'
 import { GuestGuard } from './GuestGuard.tsx'
 import { RoleGuard } from './RoleGuard.tsx'
+import { ToastContainer } from './ToastContainer.tsx'
 
 function App() {
   return (
@@ -25,7 +25,7 @@ function App() {
     // khi setSession() chay, tu dieu huong nham thang ve /tong-quan thay vi /xac-minh.
     <BrowserRouter useTransitions={false}>
       <AuthBootstrap />
-      <ToastHost />
+      <ToastContainer />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route

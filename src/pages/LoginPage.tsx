@@ -5,12 +5,15 @@ import { Button } from '@ds/components/core/Button'
 import { Field } from '@ds/components/forms/Field'
 import { Input } from '@ds/components/forms/Input'
 import { AuthLayout } from '../features/auth/AuthLayout.tsx'
+import { GoogleAuthButton } from '../features/auth/GoogleAuthButton.tsx'
 import { PasswordInput } from '../features/auth/PasswordInput.tsx'
 import { login, resendVerification } from '../api/auth.ts'
+import type { TokenResponse } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
 import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
 import { broadcastSession } from '../stores/authBroadcast.ts'
 import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 
@@ -27,8 +30,9 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const setSession = useAuthStore((state) => state.setSession)
+  const pushToast = useToastStore((state) => state.pushToast)
 
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState((location.state as { email?: string } | null)?.email ?? '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [emailError, setEmailError] = useState('')
@@ -61,6 +65,38 @@ export function LoginPage() {
     return ok
   }
 
+  // Dung chung cho dang nhap bang mat khau va dang nhap bang Google - ca 2 cung tra ve
+  // TokenResponse va di den cung mot noi sau khi thanh cong.
+  const finishLogin = (tokens: TokenResponse) => {
+    // /tong-quan boc RoleGuard, doi hoi session da co san moi cho vao - phai setSession
+    // TRUOC roi moi navigate, neu dieu huong truoc se bi RoleGuard doc duoc session con
+    // null va da nguoc ve /dang-nhap ngay lap tuc.
+    const session = sessionFromTokenResponse(tokens)
+    setSession(session)
+    // Bao cac tab khac cung trinh duyet biet vua dang nhap, khong can F5 ben do nua -
+    // xem authBroadcast.ts.
+    broadcastSession(session)
+    pushToast('success', 'Đăng nhập thành công.')
+    const from = (location.state as { from?: string } | null)?.from
+    navigate(from && from !== '/dang-nhap' ? from : '/tong-quan', { replace: true })
+  }
+
+  // Loi dang nhap Google khong phai "can xac nhan lien ket" (GoogleAuthButton da tu xu ly
+  // nhanh do) - anh xa cung 2 nhanh nhu loi dang nhap mat khau: AUTH-423-ACCOUNT_LOCKED rieng,
+  // con lai hien chung trong formError. Tai khoan Google luon ACTIVE ngay khi co token thanh
+  // cong nen khong co nhanh EMAIL_NOT_VERIFIED o day.
+  const handleGoogleError = (error: unknown) => {
+    setFormError('')
+    setLocked(false)
+    if (error instanceof ApiError && error.code === 'AUTH-423-ACCOUNT_LOCKED') {
+      setLocked(true)
+    } else if (error instanceof ApiError) {
+      setFormError(error.message)
+    } else {
+      setFormError('Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.')
+    }
+  }
+
   const handleSubmit = async () => {
     setFormError('')
     setLocked(false)
@@ -69,17 +105,7 @@ export function LoginPage() {
     setBusy(true)
     try {
       const tokens = await login({ email: email.trim(), password })
-
-      // /tong-quan boc RoleGuard, doi hoi session da co san moi cho vao - phai setSession
-      // TRUOC roi moi navigate, neu dieu huong truoc se bi RoleGuard doc duoc session con
-      // null va da nguoc ve /dang-nhap ngay lap tuc.
-      const session = sessionFromTokenResponse(tokens)
-      setSession(session)
-      // Bao cac tab khac cung trinh duyet biet vua dang nhap, khong can F5 ben do nua -
-      // xem authBroadcast.ts.
-      broadcastSession(session)
-      const from = (location.state as { from?: string } | null)?.from
-      navigate(from && from !== '/dang-nhap' ? from : '/tong-quan', { replace: true })
+      finishLogin(tokens)
     } catch (error) {
       if (error instanceof ApiError && error.code === 'AUTH-423-ACCOUNT_LOCKED') {
         setLocked(true)
@@ -96,6 +122,8 @@ export function LoginPage() {
             mode: 'signup',
             email: email.trim(),
             entryNotice: 'Tài khoản của bạn chưa xác thực email. Chúng tôi vừa gửi mã xác minh mới đến email này.',
+            backPath: '/dang-nhap',
+            backState: { email: email.trim() },
           },
         })
       } else if (error instanceof ApiError) {
@@ -115,7 +143,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout variant="login">
+    <AuthLayout variant="login" homeLink>
       <div className="flex flex-col gap-6" onKeyDown={submitOnEnter(handleSubmit, busy || locked)}>
         <div className="flex flex-col gap-2">
           <h2 className="m-0" style={{ fontSize: 'var(--fs-h1)', lineHeight: 'var(--lh-h1)', fontWeight: 'var(--fw-black)', color: 'var(--text-title)' }}>
@@ -188,6 +216,8 @@ export function LoginPage() {
           <Button variant="primary" size="lg" block disabled={busy || locked} onClick={handleSubmit}>
             {busy ? 'Đang kiểm tra…' : 'Đăng nhập'}
           </Button>
+
+          <GoogleAuthButton onSuccess={finishLogin} onError={handleGoogleError} text="signin_with" />
         </div>
 
         <p className="m-0" style={{ fontSize: 'var(--fs-xs)', lineHeight: 1.6, color: 'var(--text-muted)' }}>

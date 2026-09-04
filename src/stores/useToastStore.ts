@@ -1,35 +1,37 @@
 import { create } from 'zustand'
 
-// Thoi gian 1 toast tu bien mat neu khong ai bam tat som - du de doc 1 cau ngan, khong qua
-// lau lam vuong man hinh o goc tren-phai.
-const AUTO_DISMISS_MS = 4000
+export type ToastTone = 'success' | 'danger' | 'money'
 
 export interface ToastItem {
-  id: string
-  tone: 'success' | 'danger' | 'money'
+  id: number
+  tone: ToastTone
   message: string
 }
 
 interface ToastState {
   toasts: ToastItem[]
-  // Them 1 toast moi vao cuoi hang doi, tu len lich xoa sau AUTO_DISMISS_MS - goi
-  // imperatively tu bat ky handler nao qua useToastStore.getState().pushToast(...), khong
-  // can component dang goi phai subscribe store nay.
-  pushToast: (tone: ToastItem['tone'], message: string) => void
-  // Xoa 1 toast theo id - dung khi het gio tu dong AN, hoac nguoi dung tu bam tat som.
-  dismissToast: (id: string) => void
+  pushToast: (tone: ToastTone, message: string) => void
+  dismissToast: (id: number) => void
 }
 
-// Hang doi toast hien o goc tren-phai (xem ToastHost.tsx) - thay cho cac Alert thanh cong
-// nam im trong trang, khong tu an, de bi bo lo khi trang dai. Khong dung thu vien ngoai,
-// tan dung dung component Toast co san cua Design System (feedback/Toast.jsx).
+// Thoi gian toast tu bien mat - khong phai nguong nghiep vu (khac voi cac hang so trong
+// AuthService), chi la lua chon UX, khong can doc tu admin.system_parameters.
+const TOAST_DURATION_MS = 4000
+
+let nextToastId = 0
+
+// Store toan cuc cho toast (thong bao thoang qua, goc man hinh) - tach khoi useAuthStore vi
+// day la trang thai UI thuan tuy, khong phai du lieu phien dang nhap. Dat o day (khong phai
+// component state cuc bo) de toast song sot qua navigate() sau khi dang nhap thanh cong -
+// LoginPage unmount ngay sau khi dieu huong sang /tong-quan, ToastContainer mount rieng o
+// App.tsx moi khong bi unmount theo.
 export const useToastStore = create<ToastState>((set, get) => ({
   toasts: [],
 
   pushToast: (tone, message) => {
-    const id = crypto.randomUUID()
+    const id = nextToastId++
     set((state) => ({ toasts: [...state.toasts, { id, tone, message }] }))
-    setTimeout(() => get().dismissToast(id), AUTO_DISMISS_MS)
+    setTimeout(() => get().dismissToast(id), TOAST_DURATION_MS)
   },
 
   dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),

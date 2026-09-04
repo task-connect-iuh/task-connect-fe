@@ -11,6 +11,7 @@ import { getMyProfile } from '../api/users.ts'
 import { broadcastLogout } from '../stores/authBroadcast.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 import { useProfileStore } from '../stores/useProfileStore.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 import { Tooltip } from './Tooltip.tsx'
 
 interface NavItem {
@@ -108,6 +109,7 @@ export function AppShell({ navValue, title, subtitle, actions, children }: AppSh
     useProfileStore.getState().setProfile(null)
     // Bao cac tab khac cung trinh duyet biet vua dang xuat - xem authBroadcast.ts.
     broadcastLogout()
+    useToastStore.getState().pushToast('success', 'Đã đăng xuất.')
     navigate('/dang-nhap', { replace: true })
   }
 
@@ -115,7 +117,9 @@ export function AppShell({ navValue, title, subtitle, actions, children }: AppSh
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-app)' }}>
       <div style={{ background: 'var(--teal-900)' }}>
         <div className="max-w-container mx-auto flex items-center gap-4 px-4 md:px-8" style={{ minHeight: 96 }}>
-          <img src={logoInverse} alt="TaskConnect" style={{ height: 80 }} />
+          <Link to="/tong-quan" className="tc-logo-link">
+            <img src={logoInverse} alt="TaskConnect" style={{ height: 80 }} />
+          </Link>
           <div className="flex-1" />
           <div className="flex items-center gap-2">
             <RoleSwitcher value={roleSwitcherValue} onChange={setActiveRole} compact />
