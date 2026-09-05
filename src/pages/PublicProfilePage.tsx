@@ -61,6 +61,13 @@ export function PublicProfilePage() {
                       )}
                     </div>
                   </Card>
+                  {(profile.email || profile.phone) && (
+                    <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+                      <div className="tc-label">Liên hệ</div>
+                      {profile.email && <span style={{ color: 'var(--text-body)' }}>{profile.email}</span>}
+                      {profile.phone && <span style={{ color: 'var(--text-body)' }}>{profile.phone}</span>}
+                    </Card>
+                  )}
                   {profile.bio && (
                     <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
                       <div className="tc-label">Giới thiệu</div>

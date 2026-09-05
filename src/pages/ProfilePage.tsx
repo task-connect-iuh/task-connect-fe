@@ -9,11 +9,12 @@ import { Input } from '@ds/components/forms/Input'
 import { Textarea } from '@ds/components/forms/Textarea'
 import { AddressAutocomplete } from '../components/AddressAutocomplete.tsx'
 import { AppShell } from '../components/AppShell.tsx'
+import { EmailChangeDialog } from '../components/EmailChangeDialog.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
 import { PasswordInput } from '../features/auth/PasswordInput.tsx'
 import { createAvatarUploadUrl, getMyProfile, updateMyProfile } from '../api/users.ts'
 import type { ProfileResponse } from '../api/users.ts'
-import { changePassword } from '../api/auth.ts'
+import { changePassword, updatePhone } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 import { useProfileStore } from '../stores/useProfileStore.ts'
@@ -44,6 +45,13 @@ export function ProfilePage() {
   const [loadError, setLoadError] = useState('')
 
   const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState<string | null>(null)
+  const [phone, setPhone] = useState('')
+  // Gia tri phone luc tai ho so - dung de biet nguoi dung co THUC SU doi so hay khong luc
+  // bam "Luu thay doi", tranh goi PATCH /auth/me/phone khong can thiet moi lan luu ho so.
+  const [phoneAtLoad, setPhoneAtLoad] = useState('')
+  const [phoneError, setPhoneError] = useState('')
+  const [showEmailChangeDialog, setShowEmailChangeDialog] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [addressText, setAddressText] = useState('')
   const [bio, setBio] = useState('')
@@ -73,6 +81,9 @@ export function ProfilePage() {
 
   const applyProfile = (profile: ProfileResponse) => {
     setFullName(profile.fullName ?? '')
+    setEmail(profile.email)
+    setPhone(profile.phone ?? '')
+    setPhoneAtLoad(profile.phone ?? '')
     setAvatarUrl(profile.avatarUrl)
     setAddressText(profile.addressText ?? '')
     setBio(profile.bio ?? '')
@@ -200,10 +211,30 @@ export function ProfilePage() {
     if (!fullName.trim()) nextErrors.fullName = 'Nhập họ tên.'
     if (!operatingArea.trim()) nextErrors.operatingArea = 'Nhập khu vực hoạt động.'
     setFieldErrors(nextErrors)
+    setPhoneError('')
     if (nextErrors.fullName || nextErrors.operatingArea || nextErrors.address) return
 
     setFormError('')
     setBusy(true)
+
+    // Doi so dien thoai (neu co doi) TRUOC khi luu cac truong con lai - phone nam o
+    // AuthAccount (module Auth), khong phai user_profiles, nen la mot API call rieng (PATCH
+    // /auth/me/phone). Trung so voi tai khoan khac (AUTH-409-PHONE_EXISTS) thi to do o dung
+    // field va toast, dung nhu cac field khac, va DUNG luon o day - khong luu tiep cac truong
+    // con lai, tranh nguoi dung tuong da luu xong het trong khi so dien thoai chua doi duoc.
+    if (phone.trim() !== phoneAtLoad.trim()) {
+      try {
+        await updatePhone(phone.trim())
+        setPhoneAtLoad(phone.trim())
+      } catch (error) {
+        const message = error instanceof ApiError ? error.message : 'Không cập nhật được số điện thoại. Kiểm tra mạng rồi thử lại.'
+        setPhoneError(message)
+        useToastStore.getState().pushToast('danger', message)
+        setBusy(false)
+        return
+      }
+    }
+
     try {
       const updated = await updateMyProfile({
         fullName: fullName.trim(),
@@ -297,6 +328,22 @@ export function ProfilePage() {
               </Card>
 
               <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+                <Field label="Email">
+                  <div className="flex gap-3 items-center flex-wrap">
+                    <Input style={{ flex: 1, minWidth: 200 }} value={email ?? ''} readOnly disabled />
+                    <Button variant="secondary" size="md" onClick={() => setShowEmailChangeDialog(true)}>Đổi email</Button>
+                  </div>
+                </Field>
+
+                <Field label="Số điện thoại" error={phoneError}>
+                  <Input
+                    value={phone}
+                    onChange={(e) => { setPhone(e.target.value); setPhoneError('') }}
+                    disabled={busy}
+                    error={!!phoneError}
+                  />
+                </Field>
+
                 <Field label="Họ và tên" required error={fieldErrors.fullName}>
                   <Input value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={busy} error={!!fieldErrors.fullName} />
                 </Field>
@@ -414,6 +461,17 @@ export function ProfilePage() {
             </div>
             </div>
           )}
+      {showEmailChangeDialog && email && (
+        <EmailChangeDialog
+          currentEmail={email}
+          onClose={() => setShowEmailChangeDialog(false)}
+          onChanged={(newEmail) => {
+            setEmail(newEmail)
+            setShowEmailChangeDialog(false)
+            useToastStore.getState().pushToast('success', 'Đã đổi email thành công.')
+          }}
+        />
+      )}
     </AppShell>
   )
 }
