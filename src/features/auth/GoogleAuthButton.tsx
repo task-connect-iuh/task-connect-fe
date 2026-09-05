@@ -20,14 +20,14 @@ const PRIMARY_BUTTON_HEIGHT = 56
 
 /**
  * Boc nut Google chinh thuc (KHONG thay bang nut tu dung goi google.accounts.id.prompt() tu
- * su kien click - da thu va bo trong phien nay: prompt() (One Tap) chi dang nhap ngam duoc
- * cho nguoi DA SAN phien Google trong trinh duyet, khong phai nut dang nhap day du. Voi nguoi
- * chua dang nhap Google san (trinh duyet moi, che do an danh...), Google tra ve "Provider's
- * accounts list is empty" va prompt() luon luon skip - khong phai rui ro hiem, ma la hong han
- * voi phan lon nguoi dung chua co phien san. Nut GoogleLogin chinh thuc ben duoi dung co che
- * khac (mo cua so dang nhap Google day du), hoat dong dung cho MOI nguoi dung ke ca chua tung
- * dang nhap Google - danh doi la khong custom duoc text/bo goc tuy y, xem ghi chu tren
- * GoogleAuthButtonProps.text).
+ * su kien click - da thu va bo (lan gan nhat 2026-09-05): prompt() (One Tap) chi dang nhap
+ * ngam duoc cho nguoi DA SAN phien Google trong trinh duyet, khong phai nut dang nhap day du.
+ * Voi nguoi chua dang nhap Google san (trinh duyet moi, che do an danh...), Google tra ve
+ * "Provider's accounts list is empty" va prompt() luon luon skip - khong phai rui ro hiem, ma
+ * la hong han voi phan lon nguoi dung chua co phien san. Nut GoogleLogin chinh thuc ben duoi
+ * dung co che khac (mo cua so dang nhap Google day du), hoat dong dung cho MOI nguoi dung ke
+ * ca chua tung dang nhap Google - danh doi la khong custom duoc text/bo goc/hover tuy y, xem
+ * ghi chu tren GoogleAuthButtonProps.text.
  */
 function ScaledGoogleLogin(props: { onSuccess: (c: CredentialResponse) => void, onError: () => void, text: 'signin_with' | 'signup_with' | 'continue_with' }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -75,9 +75,8 @@ interface GoogleAuthButtonProps {
    *  - trang cha tu quyet dinh hien thi the nao, giong het cach xu ly loi dang nhap mat khau. */
   onError: (error: unknown) => void
   /** Nhan nut Google: "continue_with" (Dang nhap, mac dinh) hoac "signup_with" (Dang ky) -
-   *  Google tu dich/hien theo ngon ngu trinh duyet ("Tiếp tục với Google" ~ hoac ban dai hon
-   *  "Tiếp tục sử dụng dịch vụ bằng Google" tuy phien ban GSI; "Đăng ký bằng Google" khop dung
-   *  design). Chi 4 gia tri co dinh Google cho phep, khong custom duoc chuoi tuy y. */
+   *  Google tu dich/hien theo ngon ngu cua GoogleOAuthProvider (locale="vi" o main.tsx). Chi 4
+   *  gia tri co dinh Google cho phep, khong custom duoc chuoi tuy y - xem PROGRESS-FE.md muc 74. */
   text?: 'signin_with' | 'signup_with' | 'continue_with'
 }
 
