@@ -19,6 +19,8 @@ export interface ProfileResponse {
   locationLat: number | null
   locationLng: number | null
   kycStatus: KycStatus
+  email: string | null
+  phone: string | null
 }
 
 // Mot nhom dich vu da VERIFIED, dung de hien badge "Da xac minh" tren ho so cong khai -
@@ -40,6 +42,8 @@ export interface PublicProfileResponse {
   operatingArea: string | null
   verifiedSkills: PublicVerifiedSkillResponse[]
   availability: AvailabilitySlotResponse[]
+  email: string | null
+  phone: string | null
 }
 
 export interface UpdateProfilePayload {

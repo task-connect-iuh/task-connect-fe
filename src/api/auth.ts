@@ -95,3 +95,33 @@ export function resetPassword(payload: { email: string, otp: string, newPassword
 export function changePassword(payload: { currentPassword: string, newPassword: string, confirmNewPassword: string }) {
   return apiFetch<void>('/auth/change-password', { method: 'POST', body: payload })
 }
+
+/** Doi so dien thoai khi da dang nhap - loi AUTH-409-PHONE_EXISTS neu so nay da duoc tai khoan khac dung. Khac changePassword: khong thu hoi phien. */
+export function updatePhone(phone: string) {
+  return apiFetch<void>('/auth/me/phone', { method: 'PATCH', body: { phone } })
+}
+
+// ---------------------------------------------------------------------------
+// Doi email - luong 4 buoc: gui OTP toi email hien tai -> xac minh -> nhap email moi
+// (gui OTP rieng toi email do) -> xac minh -> doi that su. Xem EmailChangeDialog.tsx.
+// ---------------------------------------------------------------------------
+
+/** Buoc 1: gui OTP toi email hien tai cua chinh minh. */
+export function requestEmailChange() {
+  return apiFetch<void>('/auth/me/email-change/request', { method: 'POST' })
+}
+
+/** Buoc 2: xac minh OTP da gui toi email hien tai. */
+export function verifyOldEmailForChange(otp: string) {
+  return apiFetch<void>('/auth/me/email-change/verify-old', { method: 'POST', body: { otp } })
+}
+
+/** Buoc 3: nhap email moi, gui OTP rieng toi dia chi do - loi AUTH-409-EMAIL_EXISTS neu da co ai dung email nay. */
+export function requestNewEmailForChange(newEmail: string) {
+  return apiFetch<void>('/auth/me/email-change/new-email', { method: 'POST', body: { newEmail } })
+}
+
+/** Buoc 4 (cuoi): xac minh OTP email moi - thanh cong thi doi email that su, khong thu hoi phien. */
+export function confirmEmailChange(otp: string) {
+  return apiFetch<void>('/auth/me/email-change/confirm', { method: 'POST', body: { otp } })
+}
