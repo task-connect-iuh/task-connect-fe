@@ -4,9 +4,9 @@ import { apiFetch } from './client.ts'
 // KycStatus: NOT_SUBMITTED chi xuat hien o ProfileResponse.kycStatus (cot user_profiles.kyc_status) -
 // ban ghi tung lan nop (KycStatusResponse.status) khong bao gio la NOT_SUBMITTED, thay vao do
 // GET .../kyc-verifications/latest nem 404 USR-404-KYC_NOT_FOUND khi chua tung nop lan nao.
-export type KycStatus = 'NOT_SUBMITTED' | 'VERIFYING' | 'VERIFIED' | 'REJECTED'
-export type SkillVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED'
-export type CertificationStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED'
+export type KycStatus = 'NOT_SUBMITTED' | 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'CANCELLED'
+export type SkillVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'CANCELLED'
+export type CertificationStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
 export type KycImageSide = 'FRONT' | 'BACK'
 
 export interface ProfileResponse {
@@ -19,6 +19,8 @@ export interface ProfileResponse {
   locationLat: number | null
   locationLng: number | null
   kycStatus: KycStatus
+  email: string | null
+  phone: string | null
 }
 
 // Mot nhom dich vu da VERIFIED, dung de hien badge "Da xac minh" tren ho so cong khai -
@@ -40,6 +42,8 @@ export interface PublicProfileResponse {
   operatingArea: string | null
   verifiedSkills: PublicVerifiedSkillResponse[]
   availability: AvailabilitySlotResponse[]
+  email: string | null
+  phone: string | null
 }
 
 export interface UpdateProfilePayload {
@@ -121,6 +125,11 @@ export function getMyLatestKyc() {
   return apiFetch<KycStatusResponse>('/users/me/kyc-verifications/latest')
 }
 
+/** Tu huy lan nop KYC cua chinh minh khi con dang VERIFYING - loi USR-409-KYC_NOT_PENDING_REVIEW neu da duoc xu ly. */
+export function cancelMyKyc(kycVerificationId: string) {
+  return apiFetch<KycStatusResponse>(`/users/me/kyc-verifications/${kycVerificationId}/cancel`, { method: 'PATCH' })
+}
+
 // ---------------------------------------------------------------------------
 // Danh muc dich vu + yeu cau chung chi (Master Data, dung lam du lieu cho form khai ky nang).
 // ---------------------------------------------------------------------------
@@ -194,6 +203,9 @@ export interface TaskerSkillResponse {
   priceMax: number | null
   verificationStatus: SkillVerificationStatus
   verifiedAt: string | null
+  // Dung de goi cancelMyCertification khi verificationStatus === 'PENDING' - null neu chua
+  // tung nop lan nao (hiem, TaskerSkillResponse chi ton tai sau it nhat 1 lan submitSkill).
+  latestCertificationId: string | null
   latestCertificationStatus: CertificationStatus | null
   latestCertificationRejectionReason: string | null
 }
@@ -237,6 +249,11 @@ export interface CertificationDetailResponse {
 /** Chinh chu Tasker tu xem lai toan bo lich su nop chung chi cua minh cho 1 category - dung cho nut "Xem chi tiet". */
 export function getMyCertifications(categoryId: string) {
   return apiFetch<CertificationDetailResponse[]>(`/users/me/tasker-skills/${categoryId}/certifications`)
+}
+
+/** Tu huy 1 lan nop chung chi cua chinh minh khi con dang PENDING_REVIEW - loi USR-409-CERTIFICATION_NOT_PENDING_REVIEW neu da duoc xu ly. */
+export function cancelMyCertification(certificationId: string) {
+  return apiFetch<TaskerSkillResponse>(`/users/me/tasker-certifications/${certificationId}/cancel`, { method: 'PATCH' })
 }
 
 // ---------------------------------------------------------------------------
