@@ -26,13 +26,15 @@ const OVERVIEW_NAV: NavItem[] = [
   { value: 'overview', label: 'Tổng quan', icon: 'gauge', to: '/tong-quan' },
 ]
 
-// "Dang viec" chi thuoc ve Poster - Tasker khong dang viec nen khong hien muc nay.
+// "Dang viec" va "Viec cua toi" (wired) chi thuoc ve Poster - Tasker chua co man UC10/11
+// (tim/ung tuyen viec, xem docs/PROGRESS-TASK-POSTER-MODULE.md) nen khong dung chung duoc
+// muc "jobs" wired voi Poster, phai tach rieng khoi REST_NAV.
 const POSTER_ONLY_NAV: NavItem[] = [
-  { value: 'post', label: 'Đăng việc', icon: 'file-plus-2' },
+  { value: 'post', label: 'Đăng việc', icon: 'file-plus-2', to: '/dang-viec' },
+  { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list', to: '/viec-cua-toi' },
 ]
 
 const REST_NAV: NavItem[] = [
-  { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list' },
   { value: 'matches', label: 'Tasker gợi ý', icon: 'radar' },
   { value: 'chat', label: 'Tin nhắn', icon: 'message-square' },
   { value: 'profile', label: 'Hồ sơ', icon: 'user-round', to: '/ho-so' },
@@ -42,8 +44,10 @@ const REST_NAV: NavItem[] = [
 // "KYC Tasker-only") - Task Poster khong thay muc nay. Xac thuc danh tinh (KYC, UC05) va
 // Ky nang + chung chi hanh nghe (UC04) la hai trang/route rieng (xem KycPage.tsx va
 // TaskerSkillsPage.tsx) - truoc day tung gop chung mot trang, nay tach lai theo yeu cau
-// tach giao dien xac thuc cong viec.
+// tach giao dien xac thuc cong viec. "jobs" khong wired (UC10/11 Tasker chua lam) -
+// gop lai chung value voi POSTER_ONLY_NAV de active-tab hoat dong dung khi xem tu vai Poster.
 const TASKER_ONLY_NAV: NavItem[] = [
+  { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list' },
   { value: 'kyc', label: 'Xác thực danh tính', icon: 'shield-check', to: '/xac-thuc-danh-tinh' },
   { value: 'skills', label: 'Kỹ năng & chứng chỉ', icon: 'hard-hat', to: '/ho-so-nang-luc' },
 ]
