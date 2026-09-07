@@ -4,8 +4,10 @@ import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.tsx'
 import { KycPage } from '../pages/KycPage.tsx'
 import { LandingPage } from '../pages/LandingPage.tsx'
 import { LoginPage } from '../pages/LoginPage.tsx'
+import { MyTasksPage } from '../pages/MyTasksPage.tsx'
 import { NotFoundPage } from '../pages/NotFoundPage.tsx'
 import { OverviewPage } from '../pages/OverviewPage.tsx'
+import { PostTaskPage } from '../pages/PostTaskPage.tsx'
 import { PrivacyPage } from '../pages/PrivacyPage.tsx'
 import { ProfilePage } from '../pages/ProfilePage.tsx'
 import { PublicProfilePage } from '../pages/PublicProfilePage.tsx'
@@ -59,6 +61,22 @@ function App() {
           element={(
             <RoleGuard allow={['poster', 'tasker', 'admin']}>
               <PublicProfilePage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/dang-viec"
+          element={(
+            <RoleGuard allow={['poster']}>
+              <PostTaskPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/viec-cua-toi"
+          element={(
+            <RoleGuard allow={['poster']}>
+              <MyTasksPage />
             </RoleGuard>
           )}
         />
