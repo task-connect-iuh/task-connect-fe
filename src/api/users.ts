@@ -5,6 +5,8 @@ import { apiFetch } from './client.ts'
 // ban ghi tung lan nop (KycStatusResponse.status) khong bao gio la NOT_SUBMITTED, thay vao do
 // GET .../kyc-verifications/latest nem 404 USR-404-KYC_NOT_FOUND khi chua tung nop lan nao.
 export type KycStatus = 'NOT_SUBMITTED' | 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'CANCELLED'
+// Khop vn.taskconnect.user.api.Gender - chi hien thi lai cho Admin xet duyet, khong tham gia logic nghiep vu nao khac.
+export type Gender = 'MALE' | 'FEMALE' | 'OTHER'
 export type SkillVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'CANCELLED'
 export type CertificationStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
 export type KycImageSide = 'FRONT' | 'BACK'
@@ -18,6 +20,7 @@ export interface ProfileResponse {
   operatingArea: string | null
   locationLat: number | null
   locationLng: number | null
+  preferredRadiusKm: number | null
   kycStatus: KycStatus
   email: string | null
   phone: string | null
@@ -54,6 +57,7 @@ export interface UpdateProfilePayload {
   operatingArea?: string
   locationLat?: number
   locationLng?: number
+  preferredRadiusKm?: number
 }
 
 export interface AvatarUploadUrlResponse {
@@ -94,6 +98,9 @@ export interface KycUploadUrlResponse {
 
 export interface SubmitKycPayload {
   fullNameOnId: string
+  // "yyyy-mm-dd", khop dinh dang value cua <input type="date"> - backend nhan LocalDate.
+  dateOfBirth: string
+  gender: Gender
   idNumber: string
   idCardFrontKey: string
   idCardBackKey: string
@@ -101,6 +108,24 @@ export interface SubmitKycPayload {
 
 export interface KycStatusResponse {
   id: string
+  status: KycStatus
+  submittedAt: string
+  reviewedAt: string | null
+  rejectionReason: string | null
+}
+
+// Khac KycStatusResponse - co ho ten/ngay sinh/gioi tinh/so CCCD da giai ma va presigned URL
+// xem anh, khop KycReviewDetailResponse.java. dateOfBirth/gender co the null cho ban ghi nop
+// truoc V16. Dung cho nut "Xem hồ sơ đã gửi" o KycPage khi dang VERIFYING.
+export interface KycDetailResponse {
+  id: string
+  accountId: string
+  fullNameOnId: string
+  dateOfBirth: string | null
+  gender: Gender | null
+  idNumber: string
+  idCardFrontViewUrl: string
+  idCardBackViewUrl: string
   status: KycStatus
   submittedAt: string
   reviewedAt: string | null
@@ -128,6 +153,11 @@ export function getMyLatestKyc() {
 /** Tu huy lan nop KYC cua chinh minh khi con dang VERIFYING - loi USR-409-KYC_NOT_PENDING_REVIEW neu da duoc xu ly. */
 export function cancelMyKyc(kycVerificationId: string) {
   return apiFetch<KycStatusResponse>(`/users/me/kyc-verifications/${kycVerificationId}/cancel`, { method: 'PATCH' })
+}
+
+/** Chi tiet day du lan nop KYC gan nhat cua chinh minh (ho ten, ngay sinh, so CCCD da giai ma, URL xem anh) - dung cho nut "Xem hồ sơ đã gửi". */
+export function getMyLatestKycDetail() {
+  return apiFetch<KycDetailResponse>('/users/me/kyc-verifications/latest/detail')
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +238,11 @@ export interface TaskerSkillResponse {
   latestCertificationId: string | null
   latestCertificationStatus: CertificationStatus | null
   latestCertificationRejectionReason: string | null
+  // Rut gon tu lan nop chung chi gan nhat - dung ve the tom tat (khong can goi rieng
+  // getMyCertifications). null neu chua tung nop lan nao.
+  latestCertificateNumber: string | null
+  latestIssuingAuthority: string | null
+  latestIssuedDate: string | null
 }
 
 /** Xin presigned PUT URL rieng tu de tu tai file chung chi (anh hoac PDF) len S3. */

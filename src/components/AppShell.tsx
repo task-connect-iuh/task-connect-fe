@@ -22,9 +22,16 @@ interface NavItem {
   to?: string
 }
 
-const BASE_NAV: NavItem[] = [
+const OVERVIEW_NAV: NavItem[] = [
   { value: 'overview', label: 'Tổng quan', icon: 'gauge', to: '/tong-quan' },
+]
+
+// "Dang viec" chi thuoc ve Poster - Tasker khong dang viec nen khong hien muc nay.
+const POSTER_ONLY_NAV: NavItem[] = [
   { value: 'post', label: 'Đăng việc', icon: 'file-plus-2' },
+]
+
+const REST_NAV: NavItem[] = [
   { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list' },
   { value: 'matches', label: 'Tasker gợi ý', icon: 'radar' },
   { value: 'chat', label: 'Tin nhắn', icon: 'message-square' },
@@ -32,11 +39,13 @@ const BASE_NAV: NavItem[] = [
 ]
 
 // Chi Tasker moi can xac thuc danh tinh va khai bao ky nang (xem docs/PROGRESS-FE-USER-MODULE.md
-// "KYC Tasker-only") - Task Poster khong thay muc nay. Xac thuc danh tinh (KYC) va Ho so
-// nang luc gop chung mot trang/mot muc nav duy nhat (TaskerSkillsPage) - CCCD chi xac thuc
-// mot lan roi thoi nen tach rieng mot tab la thua, xem TaskerSkillsPage.tsx.
+// "KYC Tasker-only") - Task Poster khong thay muc nay. Xac thuc danh tinh (KYC, UC05) va
+// Ky nang + chung chi hanh nghe (UC04) la hai trang/route rieng (xem KycPage.tsx va
+// TaskerSkillsPage.tsx) - truoc day tung gop chung mot trang, nay tach lai theo yeu cau
+// tach giao dien xac thuc cong viec.
 const TASKER_ONLY_NAV: NavItem[] = [
-  { value: 'skills', label: 'Hồ sơ kỹ năng', icon: 'hard-hat', to: '/ho-so-nang-luc' },
+  { value: 'kyc', label: 'Xác thực danh tính', icon: 'shield-check', to: '/xac-thuc-danh-tinh' },
+  { value: 'skills', label: 'Kỹ năng & chứng chỉ', icon: 'hard-hat', to: '/ho-so-nang-luc' },
 ]
 
 // Nut mui ten cuon nav - dung teal dam (--teal-800 nen, --teal-600 vien), CUNG tong voi pill
@@ -64,7 +73,9 @@ export function AppShell({ navValue, title, subtitle, actions, children }: AppSh
   const activeRole = useAuthStore((state) => state.activeRole)
   const setActiveRole = useAuthStore((state) => state.setActiveRole)
   const roleSwitcherValue = activeRole === 'tasker' ? 'tasker' : 'poster'
-  const nav = activeRole === 'tasker' ? [...BASE_NAV, ...TASKER_ONLY_NAV] : BASE_NAV
+  const nav = activeRole === 'tasker'
+    ? [...OVERVIEW_NAV, ...REST_NAV, ...TASKER_ONLY_NAV]
+    : [...OVERVIEW_NAV, ...POSTER_ONLY_NAV, ...REST_NAV]
 
   const profile = useProfileStore((state) => state.profile)
 

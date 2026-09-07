@@ -1,5 +1,7 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { AccountSecurityPage } from '../pages/AccountSecurityPage.tsx'
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.tsx'
+import { KycPage } from '../pages/KycPage.tsx'
 import { LandingPage } from '../pages/LandingPage.tsx'
 import { LoginPage } from '../pages/LoginPage.tsx'
 import { NotFoundPage } from '../pages/NotFoundPage.tsx'
@@ -45,6 +47,14 @@ function App() {
           )}
         />
         <Route
+          path="/ho-so/bao-mat"
+          element={(
+            <RoleGuard allow={['poster', 'tasker', 'admin']}>
+              <AccountSecurityPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
           path="/ho-so/:accountId"
           element={(
             <RoleGuard allow={['poster', 'tasker', 'admin']}>
@@ -52,9 +62,14 @@ function App() {
             </RoleGuard>
           )}
         />
-        {/* Xac thuc danh tinh (KYC) da gop vao trang Ho so ky nang (/ho-so-nang-luc) -
-            giu redirect cho link/bookmark cu. */}
-        <Route path="/xac-thuc-danh-tinh" element={<Navigate to="/ho-so-nang-luc" replace />} />
+        <Route
+          path="/xac-thuc-danh-tinh"
+          element={(
+            <RoleGuard allow={['tasker']}>
+              <KycPage />
+            </RoleGuard>
+          )}
+        />
         <Route
           path="/ho-so-nang-luc"
           element={(
