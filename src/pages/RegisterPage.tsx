@@ -16,6 +16,7 @@ import { broadcastSession } from '../stores/authBroadcast.ts'
 import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 import { suggestEmailDomain } from '../utils/emailSuggestion.ts'
+import { toTitleCase } from '../utils/formatName.ts'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 const PHONE_PATTERN = /^0\d{9}$/
@@ -115,10 +116,11 @@ export function RegisterPage() {
     setEmailExists(false)
     if (!validate()) return
 
+    const normalizedName = toTitleCase(name)
     setBusy(true)
     try {
       await register({
-        fullName: name.trim(),
+        fullName: normalizedName,
         email: email.trim(),
         phone: phone.trim() || undefined,
         password,
@@ -131,10 +133,10 @@ export function RegisterPage() {
         state: {
           mode: 'signup',
           email: email.trim(),
-          name: name.trim(),
+          name: normalizedName,
           phone: phone.trim(),
           backPath: '/dang-ky',
-          backState: { name: name.trim(), email: email.trim(), phone: phone.trim() },
+          backState: { name: normalizedName, email: email.trim(), phone: phone.trim() },
         },
         replace: true,
       })
@@ -212,7 +214,15 @@ export function RegisterPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Họ và tên" error={errors.name}>
-              <Input icon="user" placeholder="Nguyễn Thị Mai" value={name} onChange={(e) => setName(e.target.value)} error={!!errors.name} disabled={busy} />
+              <Input
+                icon="user"
+                placeholder="Nguyễn Thị Mai"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={() => setName((current) => (current.trim() ? toTitleCase(current) : current))}
+                error={!!errors.name}
+                disabled={busy}
+              />
             </Field>
             <Field label="Số điện thoại" hint="Không bắt buộc" error={errors.phone}>
               <Input icon="phone" placeholder="0901 234 567" value={phone} onChange={(e) => setPhone(e.target.value)} error={!!errors.phone} disabled={busy} />

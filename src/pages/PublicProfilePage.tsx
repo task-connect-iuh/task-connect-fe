@@ -1,20 +1,27 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
 import { Avatar } from '@ds/components/core/Avatar'
 import { Badge } from '@ds/components/core/Badge'
 import { Card } from '@ds/components/core/Card'
+import { Icon } from '@ds/components/core/Icon'
 import { EmptyState } from '@ds/components/feedback/EmptyState'
 import { AppShell } from '../components/AppShell.tsx'
 import { getPublicProfile } from '../api/users.ts'
 import type { PublicProfileResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
+import { useAuthStore } from '../stores/useAuthStore.ts'
 import { formatDate } from '../utils/formatDate.ts'
 import { DAY_LABELS } from '../utils/dayOfWeek.ts'
 
 /** Ho so cong khai toi thieu cua mot tai khoan bat ky - GET /users/{accountId}, chi can da dang nhap. */
 export function PublicProfilePage() {
   const { accountId } = useParams<{ accountId: string }>()
+  // Chi hien nut "Quay lai ho so cua ban" khi dang xem DUNG ho so cong khai cua chinh minh
+  // (vao tu link "Xem hồ sơ công khai của bạn" o ProfilePage) - trang nay ve sau co the con
+  // duoc dan toi de xem ho so nguoi khac, luc do khong co "ho so goc" nao de quay ve.
+  const ownAccountId = useAuthStore((state) => state.session?.account.id)
+  const isOwnProfile = !!accountId && accountId === ownAccountId
   const [profile, setProfile] = useState<PublicProfileResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -52,6 +59,11 @@ export function PublicProfilePage() {
             ? <EmptyState icon="user-round-x" title="Chưa có hồ sơ">Tài khoản này chưa tạo hồ sơ cá nhân.</EmptyState>
             : profile && (
                 <div className="flex flex-col gap-4" style={{ maxWidth: 'var(--content-max)' }}>
+                  {isOwnProfile && (
+                    <Link to="/ho-so" className="flex items-center gap-2" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-link)', width: 'fit-content' }}>
+                      <Icon name="arrow-left" size={16} />Quay lại hồ sơ của bạn
+                    </Link>
+                  )}
                   <Card padding="var(--sp-6)" style={{ display: 'flex', gap: 'var(--sp-5)', alignItems: 'center' }}>
                     <Avatar name={profile.fullName || 'Chưa đặt tên'} src={profile.avatarUrl ?? undefined} size={80} />
                     <div>

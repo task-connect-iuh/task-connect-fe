@@ -9,6 +9,8 @@ interface FileDropzoneProps {
   previewUrl?: string | null
   error?: string
   disabled?: boolean
+  /** Chieu cao o, mac dinh 140 - KycPage dung o to hon (chiem het chieu ngang form) de de bam tren man hinh chi co 2 o. */
+  height?: number
   onSelect: (file: File) => void
 }
 
@@ -21,7 +23,7 @@ interface FileDropzoneProps {
  * thi dung anh nguoi dung vua chon thay vi chi ten file + icon check - fixed height 140 +
  * object-fit cover nen anh khong bi bop meo du ty le khac nhau.
  */
-export function FileDropzone({ label, hint, accept, fileName, previewUrl, error, disabled, onSelect }: FileDropzoneProps) {
+export function FileDropzone({ label, hint, accept, fileName, previewUrl, error, disabled, height = 140, onSelect }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   return (
@@ -32,7 +34,7 @@ export function FileDropzone({ label, hint, accept, fileName, previewUrl, error,
         onClick={() => inputRef.current?.click()}
         className="flex flex-col items-center justify-center gap-1.5"
         style={{
-          height: 140,
+          height,
           width: '100%',
           borderRadius: 'var(--r-md)',
           border: `var(--bw) dashed ${error ? 'var(--danger)' : fileName ? 'var(--teal-500)' : 'var(--teal-300)'}`,
