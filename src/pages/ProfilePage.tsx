@@ -21,32 +21,27 @@ import {
   createAvatarUploadUrl,
   deleteAvailabilitySlot,
   getMyAvailabilitySlots,
+  getMyLatestKyc,
   getMyProfile,
   getMySkills,
   listServiceCategories,
   updateAvailabilitySlot,
   updateMyProfile,
 } from '../api/users.ts'
-import type { AvailabilitySlotResponse, KycStatus, ProfileResponse, ServiceCategoryResponse, TaskerSkillResponse } from '../api/users.ts'
+import type { AvailabilitySlotResponse, KycStatus, KycStatusResponse, ProfileResponse, ServiceCategoryResponse, TaskerSkillResponse } from '../api/users.ts'
 import { updatePhone } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 import { useProfileStore } from '../stores/useProfileStore.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 import { DAY_LABELS, DAY_OPTIONS, DAY_SHORT_LABELS } from '../utils/dayOfWeek.ts'
+import { formatDate } from '../utils/formatDate.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
 import type { AddressSuggestion } from '../utils/geocoding.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 
-// Nhan/tone badge trang thai KYC canh ten - trung voi cac trang Admin (vd KycQueuePage.tsx
-// ben task-connect-admin) nhung 2 app tach repo nen khong import chung duoc.
-const KYC_STATUS_TONE: Record<KycStatus, 'warning' | 'success' | 'danger' | 'neutral'> = {
-  NOT_SUBMITTED: 'neutral',
-  VERIFYING: 'warning',
-  VERIFIED: 'success',
-  REJECTED: 'danger',
-  CANCELLED: 'neutral',
-}
+// Nhan/icon trang thai KYC cho khoi "Xac minh danh tinh" - trung voi cac trang Admin (vd
+// KycQueuePage.tsx ben task-connect-admin) nhung 2 app tach repo nen khong import chung duoc.
 const KYC_STATUS_LABEL: Record<KycStatus, string> = {
   NOT_SUBMITTED: 'Chưa xác thực danh tính',
   VERIFYING: 'Đang chờ xác thực',
@@ -60,6 +55,32 @@ const KYC_STATUS_ICON: Record<KycStatus, string> = {
   VERIFIED: 'badge-check',
   REJECTED: 'shield-x',
   CANCELLED: 'shield-question',
+}
+// Tone rieng cho khoi Alert "Xac minh danh tinh" - Alert chi co 5 tone (info/success/warning/
+// danger/money), khac bo tone cua Badge (warning/success/danger/neutral) o tren.
+const KYC_ALERT_TONE: Record<KycStatus, 'info' | 'success' | 'warning' | 'danger'> = {
+  NOT_SUBMITTED: 'info',
+  VERIFYING: 'warning',
+  VERIFIED: 'success',
+  REJECTED: 'danger',
+  CANCELLED: 'info',
+}
+
+/** Mo ta ngan cho khoi "Xac minh danh tinh" o ProfilePage - dung kycDetail (ban ghi lan nop KYC gan nhat, tu getMyLatestKyc()) de co ngay duyet/ly do tu choi, kycStatus (tu ProfileResponse) de xac dinh trang thai vi day la nguon duy nhat tra ve duoc NOT_SUBMITTED. */
+function kycStatusDescription(status: KycStatus, detail: KycStatusResponse | null) {
+  switch (status) {
+    case 'VERIFIED':
+      return detail?.reviewedAt ? `Danh tính đã được duyệt ngày ${formatDate(detail.reviewedAt)}.` : 'Danh tính của bạn đã được duyệt.'
+    case 'VERIFYING':
+      return 'Hồ sơ đang được đối chiếu, thường trong 1–3 ngày làm việc.'
+    case 'REJECTED':
+      return detail?.rejectionReason ? `Hồ sơ bị từ chối: ${detail.rejectionReason}` : 'Hồ sơ xác thực bị từ chối, nộp lại để tiếp tục.'
+    case 'CANCELLED':
+      return 'Bạn đã huỷ hồ sơ xác thực gần nhất, nộp lại khi cần.'
+    case 'NOT_SUBMITTED':
+    default:
+      return 'Bạn chưa nộp xác thực danh tính (KYC).'
+  }
 }
 
 /** Hai khoang [aStart,aEnd) va [bStart,bEnd) (chuoi "HH:MM", so sanh duoc theo tu dien vi da zero-pad) co chong lan hay khong. */
@@ -141,6 +162,9 @@ export function ProfilePage() {
   const [geocodeError, setGeocodeError] = useState('')
 
   const [kycStatus, setKycStatus] = useState<KycStatus | null>(null)
+  // Ban ghi lan nop KYC gan nhat (ngay duyet/ly do tu choi) - chi de hien mo ta chi tiet o
+  // khoi "Xac minh danh tinh", trang thai chinh van doc tu kycStatus (ProfileResponse.kycStatus).
+  const [kycDetail, setKycDetail] = useState<KycStatusResponse | null>(null)
 
   // Ban kinh lam viec uu tien (km) - luu ngay khi doi (khong qua editMode cua the "Thong
   // tin ca nhan"), giong cach Lich lam viec ben duoi luon tuong tac duoc.
@@ -247,6 +271,13 @@ export function ProfilePage() {
       .finally(() => {
         if (!cancelled) setSlotsLoading(false)
       })
+
+    // Chi de lay ngay duyet/ly do tu choi hien trong mo ta - 404 USR-404-KYC_NOT_FOUND
+    // (chua tung nop lan nao) la binh thuong, bo qua lang le vi kycStatus da du de biet
+    // NOT_SUBMITTED roi.
+    getMyLatestKyc()
+      .then((detail) => { if (!cancelled) setKycDetail(detail) })
+      .catch(() => {})
 
     return () => { cancelled = true }
   }, [isTasker])
@@ -548,13 +579,16 @@ export function ProfilePage() {
 
   const categoryNameById = new Map(categories.map((c) => [c.id, c.name]))
   const verifiedSkills = skills.filter((skill) => skill.verificationStatus === 'VERIFIED')
+  // Rail ben phai chi xuat hien khi co gi de hien: the ban do luc dang sua, hoac khoi "Xac
+  // minh danh tinh" cho Tasker - khac editMode (chi rieng the ban do), phai tinh gop ca 2.
+  const hasSidebar = editMode || (isTasker && !!kycStatus)
 
   return (
     <AppShell navValue="profile" title="Hồ sơ cá nhân" subtitle="Thông tin này hiển thị khi bạn đăng việc hoặc nhận việc">
       {loading
         ? null
         : (
-            <div style={{ display: 'grid', gridTemplateColumns: editMode ? 'minmax(0,var(--content-max)) 1fr' : 'minmax(0,var(--content-max))', gap: 'var(--sp-6)', alignItems: 'start' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: hasSidebar ? 'minmax(0,var(--content-max)) 1fr' : 'minmax(0,var(--content-max))', gap: 'var(--sp-6)', alignItems: 'start' }}>
             <div className="flex flex-col gap-6">
               {loadError && <Alert tone="danger" title="Không tải được hồ sơ">{loadError}</Alert>}
               {isNewProfile && (
@@ -575,9 +609,6 @@ export function ProfilePage() {
                       </Link>
                     )}
                   </div>
-                  {isTasker && kycStatus && (
-                    <Badge tone={KYC_STATUS_TONE[kycStatus]} icon={KYC_STATUS_ICON[kycStatus]}>{KYC_STATUS_LABEL[kycStatus]}</Badge>
-                  )}
                   {editMode
                     ? (
                         <Button
@@ -706,7 +737,38 @@ export function ProfilePage() {
 
               {isTasker && (
                 <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
-                  <strong style={{ fontSize: 'var(--fs-h3)' }}>Lịch làm việc & bán kính hoạt động</strong>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <strong style={{ fontSize: 'var(--fs-h3)' }}>Năng lực & lịch làm việc</strong>
+                    <Button variant="secondary" size="sm" icon="award" onClick={() => navigate('/ho-so-nang-luc')}>Quản lý kỹ năng</Button>
+                  </div>
+
+                  <div className="tc-label">Kỹ năng đã xác minh</div>
+                  {skillsError && <Alert tone="danger" title="Không tải được kỹ năng">{skillsError}</Alert>}
+                  {!skillsLoading && !skillsError && verifiedSkills.length === 0 && (
+                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Chưa có nhóm dịch vụ nào được xác minh.</p>
+                  )}
+                  {verifiedSkills.length > 0 && (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+                      {verifiedSkills.map((skill) => (
+                        <Card key={skill.categoryId} tone="sunken" padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+                          <div className="flex items-center justify-between gap-2">
+                            <strong style={{ fontSize: 'var(--fs-sm)' }}>{categoryNameById.get(skill.categoryId) ?? skill.categoryId}</strong>
+                            <Badge tone="success" icon="badge-check">Đã xác minh</Badge>
+                          </div>
+                          <Badge tone="neutral" icon="clock">{skill.yearsExperience} năm kinh nghiệm</Badge>
+                          {(skill.priceMin != null || skill.priceMax != null) && (
+                            <span className="tc-num" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                              {skill.priceMin != null ? `${skill.priceMin.toLocaleString('vi-VN')}₫` : '—'}
+                              {' – '}
+                              {skill.priceMax != null ? `${skill.priceMax.toLocaleString('vi-VN')}₫` : '—'}
+                            </span>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ borderTop: 'var(--bw-hair) solid var(--border-subtle)' }} />
 
                   <Field label="Bán kính làm việc ưu tiên" hint="Phạm vi bạn muốn nhận việc quanh khu vực hoạt động" error={radiusError}>
                     <Select
@@ -780,40 +842,6 @@ export function ProfilePage() {
                 </Card>
               )}
 
-              {isTasker && (
-                <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <strong style={{ fontSize: 'var(--fs-h3)' }}>Kỹ năng đã xác minh</strong>
-                    <Button variant="secondary" size="sm" icon="award" onClick={() => navigate('/ho-so-nang-luc')}>Quản lý kỹ năng</Button>
-                  </div>
-                  {skillsError && <Alert tone="danger" title="Không tải được kỹ năng">{skillsError}</Alert>}
-                  {!skillsLoading && !skillsError && verifiedSkills.length === 0 && (
-                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Chưa có nhóm dịch vụ nào được xác minh.</p>
-                  )}
-                  {verifiedSkills.length > 0 && (
-                    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
-                      {verifiedSkills.map((skill) => (
-                        <Card key={skill.categoryId} tone="sunken" padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-                          <div className="flex items-center justify-between gap-2">
-                            <strong style={{ fontSize: 'var(--fs-sm)' }}>{categoryNameById.get(skill.categoryId) ?? skill.categoryId}</strong>
-                            <Badge tone="success" icon="badge-check">Đã xác minh</Badge>
-                          </div>
-                          <Badge tone="neutral" icon="clock">{skill.yearsExperience} năm kinh nghiệm</Badge>
-                          {(skill.priceMin != null || skill.priceMax != null) && (
-                            <span className="tc-num" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
-                              {skill.priceMin != null ? `${skill.priceMin.toLocaleString('vi-VN')}₫` : '—'}
-                              {' – '}
-                              {skill.priceMax != null ? `${skill.priceMax.toLocaleString('vi-VN')}₫` : '—'}
-                              {' / giờ'}
-                            </span>
-                          )}
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              )}
-
               <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
                 <strong style={{ fontSize: 'var(--fs-h3)' }}>Tài khoản & bảo mật</strong>
                 <DataRow label="Email đăng nhập" value={email ?? '—'} />
@@ -829,21 +857,39 @@ export function ProfilePage() {
               </Card>
             </div>
 
-            {editMode && (
+            {hasSidebar && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)', position: 'sticky', top: 'var(--sp-5)' }}>
-                <Card padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-                  <div className="tc-label">Chọn vị trí trên bản đồ</div>
-                  <LocationPickerMap
-                    lat={locationLat.trim() ? Number(locationLat) : null}
-                    lng={locationLng.trim() ? Number(locationLng) : null}
-                    resetSignal={locationResetSignal}
-                    onPick={(pickedLat, pickedLng) => void applyPickedLocation(pickedLat, pickedLng)}
-                  />
-                  <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
-                    Bấm vào bản đồ hoặc kéo ghim để chọn vị trí — hệ thống tự điền "Địa chỉ" và
-                    "Khu vực hoạt động", bạn sửa lại được nếu chưa đúng.
-                  </p>
-                </Card>
+                {isTasker && kycStatus && (
+                  <Alert
+                    tone={KYC_ALERT_TONE[kycStatus]}
+                    icon={KYC_STATUS_ICON[kycStatus]}
+                    title={`Xác minh danh tính · ${KYC_STATUS_LABEL[kycStatus]}`}
+                    style={{ border: 'var(--bw) solid var(--border)' }}
+                    action={(
+                      <Button variant="secondary" size="sm" icon="shield-check" onClick={() => navigate('/xac-thuc-danh-tinh')}>
+                        Xem hồ sơ
+                      </Button>
+                    )}
+                  >
+                    {kycStatusDescription(kycStatus, kycDetail)}
+                  </Alert>
+                )}
+
+                {editMode && (
+                  <Card padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+                    <div className="tc-label">Chọn vị trí trên bản đồ</div>
+                    <LocationPickerMap
+                      lat={locationLat.trim() ? Number(locationLat) : null}
+                      lng={locationLng.trim() ? Number(locationLng) : null}
+                      resetSignal={locationResetSignal}
+                      onPick={(pickedLat, pickedLng) => void applyPickedLocation(pickedLat, pickedLng)}
+                    />
+                    <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
+                      Bấm vào bản đồ hoặc kéo ghim để chọn vị trí — hệ thống tự điền "Địa chỉ" và
+                      "Khu vực hoạt động", bạn sửa lại được nếu chưa đúng.
+                    </p>
+                  </Card>
+                )}
               </div>
             )}
             </div>
