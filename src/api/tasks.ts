@@ -70,3 +70,104 @@ export function createTaskImageUploadUrl(contentType: string) {
     body: { contentType },
   })
 }
+
+// --- UC10 (Tasker tim/ung tuyen viec) + UC11 (Poster xac nhan, gioi han doi trang thai -
+// chua co Booking/escrow that, xem task-connect-claude/docs/TASK-MODULE-SPLIT.md). Khop dung
+// TaskApplicationStatus/TaskFeedItemResponse/TaskApplicationResponse/MyApplicationResponse o BE.
+
+export type TaskApplicationStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'NEEDS_RECONFIRM'
+
+// Khong co distanceKm (can vi tri Tasker + ban kinh mac dinh, OQ-02 con MO trong
+// docs/OPEN-QUESTIONS.md) va khong co diem uy tin/so luot danh gia Poster (module Review chua
+// ton tai) - hai truong nay backend khong tra, KHONG tu bia o day.
+export interface TaskFeedItemResponse {
+  id: string
+  categoryId: string
+  categoryName: string
+  title: string
+  description: string
+  addressText: string
+  lat: number
+  lng: number
+  budgetAmount: number | null
+  scheduledAt: string | null
+  imageUrls: string[]
+  posterId: string
+  posterName: string | null
+  posterAvatarUrl: string | null
+  createdAt: string
+}
+
+export interface ApplyToTaskPayload {
+  message?: string
+}
+
+export interface TaskApplicationResponse {
+  id: string
+  taskerId: string
+  taskerName: string | null
+  taskerAvatarUrl: string | null
+  proposedArrivalText: string | null
+  message: string | null
+  status: TaskApplicationStatus
+  createdAt: string
+  respondedAt: string | null
+}
+
+export interface MyApplicationResponse {
+  applicationId: string
+  status: TaskApplicationStatus
+  proposedArrivalText: string | null
+  message: string | null
+  createdAt: string
+  respondedAt: string | null
+  taskId: string
+  taskTitle: string
+  taskAddressText: string
+  taskBudgetAmount: number | null
+  taskScheduledAt: string | null
+  taskStatus: TaskStatus
+  categoryId: string
+  categoryName: string
+  posterName: string | null
+  taskImageUrls: string[]
+}
+
+/** Feed cong viec dang mo cho Tasker duyet - chi role TASKER goi duoc. */
+export function browseOpenTasks(params: { categoryId?: string; keyword?: string } = {}) {
+  const search = new URLSearchParams()
+  if (params.categoryId) search.set('categoryId', params.categoryId)
+  if (params.keyword) search.set('keyword', params.keyword)
+  const qs = search.toString()
+  return apiFetch<TaskFeedItemResponse[]>(`/tasks${qs ? `?${qs}` : ''}`)
+}
+
+/** Chi tiet 1 cong viec dang mo - dung khi Tasker vao thang URL /tim-viec/:id. */
+export function getFeedTask(taskId: string) {
+  return apiFetch<TaskFeedItemResponse>(`/tasks/${taskId}/browse`)
+}
+
+/** Tasker gui don ung tuyen 1 cong viec. */
+export function applyToTask(taskId: string, payload: ApplyToTaskPayload) {
+  return apiFetch<TaskApplicationResponse>(`/tasks/${taskId}/applications`, { method: 'POST', body: payload })
+}
+
+/** Toan bo don ung tuyen (moi trang thai) cua chinh Tasker dang dang nhap - dung cho man "Viec da nhan". */
+export function getMyApplications() {
+  return apiFetch<MyApplicationResponse[]>('/tasks/applications/mine')
+}
+
+/** Poster xem danh sach ung vien cua 1 cong viec cua chinh minh. */
+export function getTaskApplicants(taskId: string) {
+  return apiFetch<TaskApplicationResponse[]>(`/tasks/${taskId}/applications`)
+}
+
+/** Poster xac nhan mot ung vien - Task chuyen ASSIGNED. */
+export function confirmApplication(taskId: string, applicationId: string) {
+  return apiFetch<TaskApplicationResponse>(`/tasks/${taskId}/applications/${applicationId}/confirm`, { method: 'POST' })
+}
+
+/** Poster tu choi mot ung vien. */
+export function rejectApplication(taskId: string, applicationId: string) {
+  return apiFetch<TaskApplicationResponse>(`/tasks/${taskId}/applications/${applicationId}/reject`, { method: 'POST' })
+}

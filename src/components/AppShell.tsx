@@ -44,10 +44,12 @@ const REST_NAV: NavItem[] = [
 // "KYC Tasker-only") - Task Poster khong thay muc nay. Xac thuc danh tinh (KYC, UC05) va
 // Ky nang + chung chi hanh nghe (UC04) la hai trang/route rieng (xem KycPage.tsx va
 // TaskerSkillsPage.tsx) - truoc day tung gop chung mot trang, nay tach lai theo yeu cau
-// tach giao dien xac thuc cong viec. "jobs" khong wired (UC10/11 Tasker chua lam) -
-// gop lai chung value voi POSTER_ONLY_NAV de active-tab hoat dong dung khi xem tu vai Poster.
+// tach giao dien xac thuc cong viec. "jobs" gop chung value voi POSTER_ONLY_NAV (cung tro ve
+// "/viec-cua-toi", JobsPage.tsx tu re nhanh theo activeRole) de active-tab hoat dong dung ca
+// 2 vai tro. "feed" (UC10, TaskerFeedPage.tsx) la man rieng cua Tasker, Poster khong co.
 const TASKER_ONLY_NAV: NavItem[] = [
-  { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list' },
+  { value: 'feed', label: 'Tìm việc', icon: 'search', to: '/tim-viec' },
+  { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list', to: '/viec-cua-toi' },
   { value: 'kyc', label: 'Xác thực danh tính', icon: 'shield-check', to: '/xac-thuc-danh-tinh' },
   { value: 'skills', label: 'Kỹ năng & chứng chỉ', icon: 'hard-hat', to: '/ho-so-nang-luc' },
 ]
