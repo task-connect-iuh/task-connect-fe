@@ -1,16 +1,20 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AccountSecurityPage } from '../pages/AccountSecurityPage.tsx'
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.tsx'
+import { JobsPage } from '../pages/JobsPage.tsx'
 import { KycPage } from '../pages/KycPage.tsx'
 import { LandingPage } from '../pages/LandingPage.tsx'
 import { LoginPage } from '../pages/LoginPage.tsx'
 import { NotFoundPage } from '../pages/NotFoundPage.tsx'
 import { OverviewPage } from '../pages/OverviewPage.tsx'
+import { PostTaskPage } from '../pages/PostTaskPage.tsx'
 import { PrivacyPage } from '../pages/PrivacyPage.tsx'
 import { ProfilePage } from '../pages/ProfilePage.tsx'
 import { PublicProfilePage } from '../pages/PublicProfilePage.tsx'
 import { RegisterPage } from '../pages/RegisterPage.tsx'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage.tsx'
+import { TaskerFeedPage } from '../pages/TaskerFeedPage.tsx'
+import { TaskerJobDetailPage } from '../pages/TaskerJobDetailPage.tsx'
 import { TaskerSkillsPage } from '../pages/TaskerSkillsPage.tsx'
 import { TermsPage } from '../pages/TermsPage.tsx'
 import { VerifyEmailPage } from '../pages/VerifyEmailPage.tsx'
@@ -61,6 +65,38 @@ function App() {
           element={(
             <RoleGuard allow={['poster', 'tasker', 'admin']}>
               <PublicProfilePage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/dang-viec"
+          element={(
+            <RoleGuard allow={['poster']}>
+              <PostTaskPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/viec-cua-toi"
+          element={(
+            <RoleGuard allow={['poster', 'tasker']}>
+              <JobsPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/tim-viec"
+          element={(
+            <RoleGuard allow={['tasker']}>
+              <TaskerFeedPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/tim-viec/:jobId"
+          element={(
+            <RoleGuard allow={['tasker']}>
+              <TaskerJobDetailPage />
             </RoleGuard>
           )}
         />
