@@ -18,6 +18,7 @@ import { AuthBootstrap } from './AuthBootstrap.tsx'
 import { GuestGuard } from './GuestGuard.tsx'
 import { RoleGuard } from './RoleGuard.tsx'
 import { ToastContainer } from './ToastContainer.tsx'
+import { TopLoadingBar } from './TopLoadingBar.tsx'
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
     // khi setSession() chay, tu dieu huong nham thang ve /tong-quan thay vi /xac-minh.
     <BrowserRouter useTransitions={false}>
       <AuthBootstrap />
+      <TopLoadingBar />
       <ToastContainer />
       <Routes>
         <Route path="/" element={<LandingPage />} />

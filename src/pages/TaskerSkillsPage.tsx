@@ -257,13 +257,13 @@ function SkillForm({ category, existing, onDone, onCancel }: SkillFormProps) {
         </Field>
         <Field
           label="Giá tối thiểu"
-          hint="Nhập theo đơn vị nghìn đồng/giờ, không bắt buộc — vd nhập 50 nghĩa là 50.000 đ/giờ"
+          hint="Nhập theo đơn vị nghìn đồng, không bắt buộc — vd nhập 50 nghĩa là 50.000 đ"
           error={errors.priceMin}
           style={{ flex: 1, minWidth: 160 }}
         >
           <Input
             numeric inputMode="numeric"
-            suffix={priceMin ? formatThousandVnd(priceMin) : 'nghìn đ/giờ'}
+            suffix={priceMin ? formatThousandVnd(priceMin) : 'nghìn đ'}
             value={priceMin}
             onChange={(e) => setPriceMin(e.target.value.replace(/\D/g, ''))}
             disabled={busy}
@@ -272,13 +272,13 @@ function SkillForm({ category, existing, onDone, onCancel }: SkillFormProps) {
         </Field>
         <Field
           label="Giá tối đa"
-          hint="Nhập theo đơn vị nghìn đồng/giờ, không bắt buộc — vd nhập 50 nghĩa là 50.000 đ/giờ"
+          hint="Nhập theo đơn vị nghìn đồng, không bắt buộc — vd nhập 50 nghĩa là 50.000 đ"
           error={errors.priceMax}
           style={{ flex: 1, minWidth: 160 }}
         >
           <Input
             numeric inputMode="numeric"
-            suffix={priceMax ? formatThousandVnd(priceMax) : 'nghìn đ/giờ'}
+            suffix={priceMax ? formatThousandVnd(priceMax) : 'nghìn đ'}
             value={priceMax}
             onChange={(e) => setPriceMax(e.target.value.replace(/\D/g, ''))}
             disabled={busy}
@@ -539,16 +539,17 @@ export function TaskerSkillsPage() {
   const detailsSkill = detailsCategory ? skillByCategory.get(detailsCategory.id) : undefined
 
   // Dem theo trang thai de hien count tren Tabs va DataRow rail ben phai - "verified" chi tinh
-  // VERIFIED, "todo" gom chua khai bao + PENDING + REJECTED + CANCELLED (deu can Tasker lam gi do).
+  // VERIFIED, "todo" chi tinh cac ho so DA NOP nhung con vuong (PENDING/REJECTED/CANCELLED) -
+  // khong tinh nhom dich vu chua khai bao lan nao (khong co skill).
   const verifiedCount = skills.filter((s) => s.verificationStatus === 'VERIFIED').length
   const pendingCount = skills.filter((s) => s.verificationStatus === 'PENDING').length
   const rejectedCount = skills.filter((s) => s.verificationStatus === 'REJECTED').length
-  const todoCount = categories.length - verifiedCount
+  const todoCount = skills.filter((s) => s.verificationStatus === 'PENDING' || s.verificationStatus === 'REJECTED' || s.verificationStatus === 'CANCELLED').length
   const visibleCategories = categories.filter((category) => {
     if (certTab === 'all') return true
     const status = skillByCategory.get(category.id)?.verificationStatus
     if (certTab === 'verified') return status === 'VERIFIED'
-    return status !== 'VERIFIED'
+    return status === 'PENDING' || status === 'REJECTED' || status === 'CANCELLED'
   })
 
   return (
@@ -574,6 +575,10 @@ export function TaskerSkillsPage() {
                   : (
                     <div style={{ display: 'grid', gridTemplateColumns: '2.3fr 1fr', gap: 'var(--sp-6)', alignItems: 'start' }}>
                       <div className="flex flex-col gap-4">
+                        <Alert tone="info" title="Xác minh chứng chỉ để nhận việc">
+                          Hãy xác minh chứng chỉ hành nghề bạn có theo từng nhóm dịch vụ trong danh sách bên dưới — chỉ khi chứng chỉ của nhóm nào được duyệt, bạn mới nhận được các công việc thuộc nhóm dịch vụ đó.
+                        </Alert>
+
                         {!kycVerified && (
                           <Alert tone="warning" title="Đang chờ xác thực danh tính">
                             Bạn đã nộp KYC nên khai báo được kỹ năng và nộp chứng chỉ ngay, nhưng hồ sơ chỉ được duyệt sau khi xác thực danh tính (KYC) hoàn tất.
