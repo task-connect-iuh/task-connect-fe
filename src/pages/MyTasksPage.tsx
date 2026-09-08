@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
+import { Avatar } from '@ds/components/core/Avatar'
 import { Badge } from '@ds/components/core/Badge'
 import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
@@ -14,11 +15,12 @@ import { Tabs } from '@ds/components/navigation/Tabs'
 import { AppShell } from '../components/AppShell.tsx'
 import { DialogViewport } from '../components/DialogViewport.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
-import { getMyTasks } from '../api/tasks.ts'
-import type { TaskResponse, TaskStatus } from '../api/tasks.ts'
+import { confirmApplication, getMyTasks, getTaskApplicants, rejectApplication } from '../api/tasks.ts'
+import type { TaskApplicationResponse, TaskResponse, TaskStatus } from '../api/tasks.ts'
 import { ApiError } from '../api/client.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useLockBodyScroll } from '../utils/useLockBodyScroll.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 
 // Nhan rieng cho TaskStatus (khac vocabulary cua StatusPill - component do chi danh cho
 // trang thai booking/thanh toan, xem StatusPill.jsx "Never invent labels outside this map").
@@ -77,13 +79,110 @@ function formatWeekdayTime(iso: string) {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${time}`
 }
 
+// Nhan/tone rieng cho trang thai don ung tuyen - cung nguyen tac voi TASK_STATUS_LABEL (khong dung vocabulary StatusPill).
+const APPLICATION_STATUS_LABEL: Record<TaskApplicationResponse['status'], string> = {
+  PENDING: 'Chờ bạn xác nhận',
+  ACCEPTED: 'Đã xác nhận',
+  NEEDS_RECONFIRM: 'Cần ứng tuyển lại',
+  REJECTED: 'Đã từ chối',
+}
+const APPLICATION_STATUS_TONE: Record<TaskApplicationResponse['status'], 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
+  PENDING: 'info',
+  ACCEPTED: 'success',
+  NEEDS_RECONFIRM: 'warning',
+  REJECTED: 'neutral',
+}
+
+interface ApplicantsPanelProps {
+  task: TaskResponse
+  onConfirmed: () => void
+}
+
+/**
+ * Danh sach ung vien cua 1 cong viec + nut xac nhan/tu choi (UC11, gioi han doi trang thai -
+ * chua tao Booking that, xem docs/TASK-MODULE-SPLIT.md). Chi hien khi task dang OPEN (con
+ * nhan ung tuyen) hoac ASSIGNED (de xem lai ai da duoc chon). Sau khi xac nhan thanh cong, goi
+ * onConfirmed() de MyTasksPage refetch danh sach cong viec (Task chuyen ASSIGNED) va dong dialog.
+ */
+function ApplicantsPanel({ task, onConfirmed }: ApplicantsPanelProps) {
+  const [applicants, setApplicants] = useState<TaskApplicationResponse[] | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [processingId, setProcessingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    getTaskApplicants(task.id)
+      .then(setApplicants)
+      .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Không tải được danh sách ứng viên.'))
+  }, [task.id])
+
+  const handleConfirm = (applicationId: string) => {
+    setProcessingId(applicationId)
+    confirmApplication(task.id, applicationId)
+      .then(() => {
+        useToastStore.getState().pushToast('success', 'Đã xác nhận Tasker cho công việc này.')
+        onConfirmed()
+      })
+      .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Xác nhận thất bại, thử lại sau.'))
+      .finally(() => setProcessingId(null))
+  }
+
+  const handleReject = (applicationId: string) => {
+    setProcessingId(applicationId)
+    rejectApplication(task.id, applicationId)
+      .then((updated) => {
+        setApplicants((prev) => prev?.map((a) => (a.id === updated.id ? updated : a)) ?? null)
+        useToastStore.getState().pushToast('success', 'Đã từ chối ứng viên này.')
+      })
+      .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Từ chối thất bại, thử lại sau.'))
+      .finally(() => setProcessingId(null))
+  }
+
+  return (
+    <div className="flex flex-col gap-3" style={{ paddingTop: 'var(--sp-2)', borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
+      <div className="tc-label">Ứng viên</div>
+      {loadError && <Alert tone="danger" title="Không tải được dữ liệu">{loadError}</Alert>}
+      {applicants == null && !loadError && (
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Đang tải…</p>
+      )}
+      {applicants != null && applicants.length === 0 && (
+        <EmptyState icon="user-search" title="Chưa có ai ứng tuyển" />
+      )}
+      {applicants?.map((applicant) => (
+        <Card key={applicant.id} padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+          <div className="flex items-center gap-3">
+            <Avatar name={applicant.taskerName ?? 'Tasker'} size={36} />
+            <div className="flex-1">
+              <strong style={{ fontSize: 'var(--fs-body)' }}>{applicant.taskerName ?? 'Tasker'}</strong>
+            </div>
+            <Badge tone={APPLICATION_STATUS_TONE[applicant.status]}>{APPLICATION_STATUS_LABEL[applicant.status]}</Badge>
+          </div>
+          {applicant.message && (
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-body)', lineHeight: 1.5 }}>{applicant.message}</p>
+          )}
+          {applicant.status === 'PENDING' && task.status === 'OPEN' && (
+            <div className="flex gap-2" style={{ marginTop: 'var(--sp-1)' }}>
+              <Button size="sm" icon="check" disabled={processingId != null} onClick={() => handleConfirm(applicant.id)}>
+                {processingId === applicant.id ? 'Đang xử lý…' : 'Xác nhận'}
+              </Button>
+              <Button variant="secondary" size="sm" icon="x" disabled={processingId != null} onClick={() => handleReject(applicant.id)}>
+                Từ chối
+              </Button>
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 interface TaskDetailDialogProps {
   task: TaskResponse
   onClose: () => void
+  onApplicantConfirmed: () => void
 }
 
-/** Xem chi tiet 1 cong viec da dang - dung lai du lieu da co san tu getMyTasks(), khong goi rieng GET /tasks/{id}. Anh chi hien khi bam nut "Xem ảnh" (khong hien san thumbnail) - mo ImageLightbox dang gallery, duyet qua lai bang next/prev, cham trang, hoac vuot trai/phai. */
-function TaskDetailDialog({ task, onClose }: TaskDetailDialogProps) {
+/** Xem chi tiet 1 cong viec da dang - dung lai du lieu da co san tu getMyTasks(), khong goi rieng GET /tasks/{id}. Anh chi hien khi bam nut "Xem ảnh" (khong hien san thumbnail) - mo ImageLightbox dang gallery, duyet qua lai bang next/prev, cham trang, hoac vuot trai/phai. Voi task OPEN/ASSIGNED, them ApplicantsPanel de Poster xem/xac nhan ung vien (UC11). */
+function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDetailDialogProps) {
   useLockBodyScroll(true)
   const lightbox = useImageLightbox()
   const step = lifecycleStepFor(task.status)
@@ -116,6 +215,10 @@ function TaskDetailDialog({ task, onClose }: TaskDetailDialogProps) {
           <DataRow label="Ngân sách" value={formatBudget(task.budgetAmount)} numeric />
           <DataRow label="Thời gian mong muốn" value={task.scheduledAt ? formatDateTime(task.scheduledAt) : 'Chưa xác định'} />
           <DataRow label="Đăng lúc" value={formatDateTime(task.createdAt)} />
+
+          {(task.status === 'OPEN' || task.status === 'ASSIGNED') && (
+            <ApplicantsPanel task={task} onConfirmed={() => { onApplicantConfirmed(); onClose() }} />
+          )}
         </div>
       </Dialog>
 
@@ -227,11 +330,13 @@ export function MyTasksPage() {
   const [tab, setTab] = useState<TaskTab>('posted')
   const rowLightbox = useImageLightbox()
 
-  useEffect(() => {
+  const refresh = () => {
     getMyTasks()
       .then(setTasks)
       .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Không tải được danh sách công việc.'))
-  }, [])
+  }
+
+  useEffect(refresh, [])
 
   const openCount = tasks?.filter((t) => t.status === 'OPEN').length ?? 0
   const runningCount = tasks?.filter((t) => t.status === 'ASSIGNED').length ?? 0
@@ -344,7 +449,9 @@ export function MyTasksPage() {
         </div>
       </div>
 
-      {detailTask && <TaskDetailDialog task={detailTask} onClose={() => setDetailTask(null)} />}
+      {detailTask && (
+        <TaskDetailDialog task={detailTask} onClose={() => setDetailTask(null)} onApplicantConfirmed={refresh} />
+      )}
 
       {rowLightbox.viewerUrl && (
         <ImageLightbox
