@@ -24,9 +24,16 @@ interface GuestGuardProps {
 export function GuestGuard({ children }: GuestGuardProps) {
   const hydrated = useAuthStore((state) => state.hydrated)
   const session = useAuthStore((state) => state.session)
+  const needsPhoneVerification = useAuthStore((state) => state.needsPhoneVerification)
 
   if (!hydrated) return null
-  if (session) return <Navigate to="/tong-quan" replace />
+  if (session) {
+    // needsPhoneVerification: setSession() cua lan dang nhap DAU TIEN (finishLoginAndRedirect)
+    // tu kich re-render nay TRUOC KHI navigate() rieng cua no kip doi route - phai dieu huong
+    // dung ve cong xac minh SDT o day, khong thi luon thang /tong-quan se de rieng navigate()
+    // kia (xem postLoginRedirect.ts).
+    return <Navigate to={needsPhoneVerification ? '/xac-minh-so-dien-thoai' : '/tong-quan'} replace />
+  }
 
   return children
 }

@@ -49,3 +49,12 @@
 .tc-logo-link:hover {
   opacity: 0.85;
 }
+
+/* Chi gach chan khi hover cho link dang text (vd "Chua xac minh" o ProfilePage.tsx) - khong
+   the lam qua inline style vi :hover la pseudo-class. */
+.tc-underline-hover {
+  text-decoration: none;
+}
+.tc-underline-hover:hover {
+  text-decoration: underline;
+}

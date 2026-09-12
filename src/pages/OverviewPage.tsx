@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
 import { EmptyState } from '@ds/components/feedback/EmptyState'
 import { Avatar } from '@ds/components/core/Avatar'
@@ -6,12 +7,14 @@ import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
 import { Icon } from '@ds/components/core/Icon'
 import { DataRow } from '@ds/components/marketplace/DataRow'
+import { KycStatus } from '@ds/components/marketplace/KycStatus'
 import { LifecycleTracker } from '@ds/components/marketplace/LifecycleTracker'
 import { MoneyAmount } from '@ds/components/marketplace/MoneyAmount'
 import { StatusPill } from '@ds/components/marketplace/StatusPill'
 import { TaskCard } from '@ds/components/marketplace/TaskCard'
 import { TrustScore } from '@ds/components/marketplace/TrustScore'
 import { AppShell } from '../components/AppShell.tsx'
+import { toKycStatusState, useTaskerEligibility } from '../features/tasker/useTaskerEligibility.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 
 // Du lieu minh hoa - module Task/Booking/Payment chua ton tai o backend (xem
@@ -145,17 +148,49 @@ function RoleNotReadyOverview() {
   )
 }
 
+/** Tong quan cho vai tro Tasker: man that chua dung (xem RoleNotReadyOverview), nhung van can
+ *  nhac ngay o day neu KYC chua VERIFIED - dung chung useTaskerEligibility() voi TaskerFeedPage/
+ *  TaskerJobDetailPage de dong nhat trang thai va noi dung banner. */
+function TaskerOverview() {
+  const navigate = useNavigate()
+  const { ready, kycStatus } = useTaskerEligibility()
+
+  return (
+    <div className="flex flex-col gap-5">
+      {ready && kycStatus !== 'VERIFIED' && (
+        <KycStatus
+          state={toKycStatusState(kycStatus)}
+          reason={
+            kycStatus === 'VERIFYING'
+              ? 'Hồ sơ của bạn đang chờ duyệt (thường trong 24 giờ). Bạn chưa thể ứng tuyển việc cho tới khi được duyệt.'
+              : kycStatus === 'REJECTED'
+                ? 'Hồ sơ xác minh danh tính bị từ chối. Nộp lại để có thể ứng tuyển việc.'
+                : 'Bạn cần xác minh danh tính (KYC) trước khi ứng tuyển việc.'
+          }
+          action={
+            <Button size="sm" variant="secondary" onClick={() => navigate('/xac-thuc-danh-tinh')}>
+              {kycStatus === 'VERIFYING' || kycStatus === 'REJECTED' ? 'Xem hồ sơ xác minh' : 'Đến xác minh'}
+            </Button>
+          }
+        />
+      )}
+      <RoleNotReadyOverview />
+    </div>
+  )
+}
+
 /**
  * Man Tong quan sau dang nhap - man tham chieu chuan nhat cua vai tro Poster theo
- * @ds/ui_kits/poster/OverviewScreen.jsx. Vai tro Tasker chua duoc dung (xem
- * docs/PROGRESS-FE.md "Buoc tiep theo").
+ * @ds/ui_kits/poster/OverviewScreen.jsx. Vai tro Tasker chua co man that (xem
+ * docs/PROGRESS-FE.md "Buoc tiep theo"), nhung da hien banner nhac xac minh KYC ngay tu day
+ * (TaskerOverview) theo yeu cau nguoi dung, cung noi dung/hanh dong voi TaskerFeedPage.
  */
 export function OverviewPage() {
   const activeRole = useAuthStore((state) => state.activeRole)
 
   return (
     <AppShell navValue="overview" title="Chào bạn, đây là tình hình việc của bạn" subtitle="Cập nhật theo thời gian thực">
-      {activeRole === 'poster' ? <PosterOverview /> : <RoleNotReadyOverview />}
+      {activeRole === 'poster' ? <PosterOverview /> : activeRole === 'tasker' ? <TaskerOverview /> : <RoleNotReadyOverview />}
     </AppShell>
   )
 }

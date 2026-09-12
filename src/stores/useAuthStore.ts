@@ -25,8 +25,16 @@ interface AuthState {
   // bi day ve /dang-nhap, thay vi im lang nhu logout thuong. Duoc reset ve false ngay khi
   // co session moi (setSession) hoac logout thu cong, xem apiFetch trong api/client.ts.
   sessionExpired: boolean
-  setSession: (session: Session | null, activeRole?: Role) => void
+  // true tu ngay setSession() cua lan dang nhap DAU TIEN (TokenResponse.firstLogin) toi khi
+  // PhoneVerificationGatePage duoc roi khoi (xac minh xong hoac bam Bo qua) - GuestGuard doc
+  // co nay de biet dieu huong nguoi vua dang nhap ve cong xac minh SDT thay vi /tong-quan nhu
+  // binh thuong, xem GuestGuard.tsx. Khong the chi dua vao navigate() ngay sau setSession():
+  // setSession() tu kich GuestGuard re-render (dang bao boc /dang-nhap) TRUOC khi navigate()
+  // kip doi route, GuestGuard tu redirect /tong-quan de roi thang navigate() con lai.
+  needsPhoneVerification: boolean
+  setSession: (session: Session | null, activeRole?: Role, needsPhoneVerification?: boolean) => void
   setActiveRole: (activeRole: Role) => void
+  clearPhoneVerificationGate: () => void
   setHydrated: () => void
   // Cap nhat lac quan status sau khi verify-email thanh cong - endpoint do tra Void,
   // khong tra TokenResponse moi, nhung ta biet chac status backend da chuyen ACTIVE.
@@ -89,8 +97,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   activeRole: null,
   hydrated: false,
   sessionExpired: false,
+  needsPhoneVerification: false,
 
-  setSession: (session, activeRole) => {
+  setSession: (session, activeRole, needsPhoneVerification) => {
     // Mac dinh vao vai tro Poster sau dang nhap (quyet dinh da chot) - tai khoan tu dang ky
     // luon co ca 2 vai tro, chon vai tro dang hoat dong that su la viec cua man hinh khac,
     // lam sau. Chi roi ve roles[0] khi tai khoan khong co Poster (vd tai khoan Admin).
@@ -101,13 +110,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       ?? (session?.account.roles.includes('poster') ? 'poster' : session?.account.roles[0])
       ?? null
     persistActiveRole(resolvedRole)
-    set({ session, activeRole: resolvedRole, sessionExpired: false })
+    set({ session, activeRole: resolvedRole, sessionExpired: false, needsPhoneVerification: !!needsPhoneVerification })
   },
 
   setActiveRole: (activeRole) => {
     persistActiveRole(activeRole)
     set({ activeRole })
   },
+  clearPhoneVerificationGate: () => set({ needsPhoneVerification: false }),
   setHydrated: () => set({ hydrated: true }),
 
   setAccountStatus: (status) => set((state) => (
@@ -116,11 +126,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     persistActiveRole(null)
-    set({ session: null, activeRole: null, sessionExpired: false })
+    set({ session: null, activeRole: null, sessionExpired: false, needsPhoneVerification: false })
   },
 
   expireSession: () => {
     persistActiveRole(null)
-    set({ session: null, activeRole: null, sessionExpired: true })
+    set({ session: null, activeRole: null, sessionExpired: true, needsPhoneVerification: false })
   },
 }))

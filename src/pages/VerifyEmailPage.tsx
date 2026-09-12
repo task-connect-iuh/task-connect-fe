@@ -13,7 +13,6 @@ interface VerifyLocationState {
   mode: 'signup' | 'reset'
   email: string
   name?: string
-  phone?: string
   /** Thong bao ly do vao thang man nay - vd tu dang nhap voi tai khoan UNVERIFIED, hoac
    *  tu dang ky trung email chua xac thuc. Khac voi "notice" cuc bo (xac nhan da gui lai ma). */
   entryNotice?: string

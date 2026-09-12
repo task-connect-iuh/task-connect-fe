@@ -15,6 +15,7 @@ import { DataRow } from '@ds/components/marketplace/DataRow'
 import { AddressAutocomplete } from '../components/AddressAutocomplete.tsx'
 import { AppShell } from '../components/AppShell.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
+import { PhoneChangeDialog } from '../components/PhoneChangeDialog.tsx'
 import { TimeSelect } from '../components/TimeSelect.tsx'
 import {
   addAvailabilitySlot,
@@ -28,14 +29,14 @@ import {
   updateAvailabilitySlot,
   updateMyProfile,
 } from '../api/users.ts'
-import type { AvailabilitySlotResponse, KycStatus, KycStatusResponse, ProfileResponse, ServiceCategoryResponse, TaskerSkillResponse } from '../api/users.ts'
-import { updatePhone } from '../api/auth.ts'
+import type { AvailabilitySlotResponse, KycStatus, KycStatusResponse, LocationType, ProfileResponse, ServiceCategoryResponse, TaskerSkillResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 import { useProfileStore } from '../stores/useProfileStore.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 import { DAY_LABELS, DAY_OPTIONS, DAY_SHORT_LABELS } from '../utils/dayOfWeek.ts'
 import { formatDate } from '../utils/formatDate.ts'
+import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
 import type { AddressSuggestion } from '../utils/geocoding.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
@@ -111,19 +112,30 @@ const RADIUS_OPTIONS = [3, 5, 10, 15, 20, 30, 50].map((km) => ({ value: String(k
  * Luc sua, moi truong deu bat buoc nhap (tru "Gioi thieu ban than") - handleSubmit chan Luu
  * neu con truong bat buoc bo trong.
  *
- * Ngoai "Thong tin ca nhan" (PATCH /users/me), trang con hien 2 khoi rieng chi danh cho tai
- * khoan co vai tro Tasker (isTasker, xem session.account.roles - tai khoan tu dang ky luon co
- * ca Poster/Tasker, chi tai khoan Admin thuan (chi co role admin) moi khong co): "Ky nang da
- * xac minh" (tom tat, doc qua getMySkills()/listServiceCategories(), sua that su van o trang
- * rieng "/ho-so-nang-luc") va "Lich lam viec" (CRUD day du, chuyen nguyen tu TaskerSkillsPage.tsx
- * sang day vi hop ly hon ve chu de - lich ranh la thong tin ca nhan, khong phai ho so ky nang).
- * Trang nay dung chung ca 3 vai tro (RoleGuard allow ['poster','tasker','admin']) nen 2 khoi do
- * PHAI gate boi isTasker, khac voi khoi "Thong tin ca nhan"/"Tai khoan & bao mat" hien cho tat ca.
+ * Ngoai "Thong tin ca nhan" (PATCH /users/me), trang hien THEM MOT khoi rieng gate theo
+ * activeRole dang chon (RoleSwitcher tren AppShell) - khong phai theo tai khoan co giu role
+ * gi (session.account.roles), vi hau het tai khoan dang ky deu co ca Poster+Tasker cung luc
+ * nen gate theo "co role" se luon hien khoi Tasker bat ke dang xem o vai tro nao:
+ *   - activeRole === 'tasker': "Nang luc & lich lam viec" - "Ky nang da xac minh" (tom tat,
+ *     doc qua getMySkills()/listServiceCategories(), sua that su van o trang rieng
+ *     "/ho-so-nang-luc") va "Lich lam viec" (CRUD day du, chuyen nguyen tu TaskerSkillsPage.tsx
+ *     sang day vi hop ly hon ve chu de - lich ranh la thong tin ca nhan, khong phai ho so ky nang).
+ *   - activeRole === 'poster': "Gioi thieu ngan" - nhom dich vu Poster thuong thue
+ *     (jobCategoryIds, tai su dung danh muc user_service_categories nhu Tasker skills, xem
+ *     V23__create_user_poster_job_categories.sql), loai dia diem (locationType) va luu y khi
+ *     Tasker toi nha (arrivalNotes, V22). KHONG lap lai dia chi/khu vuc hoat dong vi da hien o
+ *     the "Thong tin ca nhan" ben tren roi. Ca hai field nay chi Poster dung toi nhung van luu
+ *     chung tren UserProfile/ProfileResponse (khong tach entity rieng) vi mot tai khoan co the
+ *     vua la Poster vua la Tasker.
+ * Trang nay dung chung ca 3 vai tro (RoleGuard allow ['poster','tasker','admin']) - voi
+ * activeRole 'admin' thi ca hai khoi tren deu an, chi con "Thong tin ca nhan"/"Tai khoan & bao mat".
  */
 export function ProfilePage() {
   const navigate = useNavigate()
   const accountId = useAuthStore((state) => state.session?.account.id)
-  const isTasker = useAuthStore((state) => state.session?.account.roles.includes('tasker') ?? false)
+  const activeRole = useAuthStore((state) => state.activeRole)
+  const showTaskerPanel = activeRole === 'tasker'
+  const showPosterPanel = activeRole === 'poster'
 
   const [loading, setLoading] = useState(true)
   const [isNewProfile, setIsNewProfile] = useState(false)
@@ -138,10 +150,10 @@ export function ProfilePage() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState<string | null>(null)
   const [phone, setPhone] = useState('')
-  // Gia tri phone luc tai ho so - dung de biet nguoi dung co THUC SU doi so hay khong luc
-  // bam "Luu thay doi", tranh goi PATCH /auth/me/phone khong can thiet moi lan luu ho so.
-  const [phoneAtLoad, setPhoneAtLoad] = useState('')
-  const [phoneError, setPhoneError] = useState('')
+  // Mo dialog xac minh Firebase khi bam "Xac minh/Doi so dien thoai" - tach hoan toan khoi
+  // nut "Luu thay doi" chung (khac cac truong khac), vi doi so bat buoc qua buoc xac minh
+  // OTP rieng, xem PhoneChangeDialog.tsx.
+  const [showPhoneChangeDialog, setShowPhoneChangeDialog] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [addressText, setAddressText] = useState('')
   const [bio, setBio] = useState('')
@@ -178,6 +190,14 @@ export function ProfilePage() {
   const [skillsLoading, setSkillsLoading] = useState(false)
   const [skillsError, setSkillsError] = useState('')
 
+  // "Gioi thieu ngan" cua Poster - tu dong luu ngay khi doi (khong co nut luu thu cong,
+  // khong qua editMode cua the "Thong tin ca nhan"), cung mau voi Ban kinh lam viec cua Tasker.
+  const [jobCategoryIds, setJobCategoryIds] = useState<Set<string>>(new Set())
+  const [locationType, setLocationType] = useState<LocationType | ''>('')
+  const [arrivalNotes, setArrivalNotes] = useState('')
+  const [posterBusy, setPosterBusy] = useState(false)
+  const [posterError, setPosterError] = useState('')
+
   // Lich lam viec - CRUD day du, chuyen nguyen logic tu TaskerSkillsPage.tsx.
   const [slots, setSlots] = useState<AvailabilitySlotResponse[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
@@ -198,7 +218,6 @@ export function ProfilePage() {
     setFullName(profile.fullName ?? '')
     setEmail(profile.email)
     setPhone(profile.phone ?? '')
-    setPhoneAtLoad(profile.phone ?? '')
     setAvatarUrl(profile.avatarUrl)
     setAddressText(profile.addressText ?? '')
     setBio(profile.bio ?? '')
@@ -206,6 +225,9 @@ export function ProfilePage() {
     setLocationLat(profile.locationLat != null ? String(profile.locationLat) : '')
     setLocationLng(profile.locationLng != null ? String(profile.locationLng) : '')
     setPreferredRadiusKm(profile.preferredRadiusKm != null ? String(profile.preferredRadiusKm) : '')
+    setJobCategoryIds(new Set(profile.jobCategoryIds))
+    setLocationType(profile.locationType ?? '')
+    setArrivalNotes(profile.arrivalNotes ?? '')
     setKycStatus(profile.kycStatus)
     setLastProfile(profile)
     // Dong bo sang store dung chung de AppShell hien dung avatar/ten tren thanh tren ngay,
@@ -236,18 +258,27 @@ export function ProfilePage() {
     return () => { cancelled = true }
   }, [])
 
-  // Ky nang da xac minh + lich lam viec chi ap dung cho tai khoan co vai tro Tasker - khong
-  // goi API rieng cho Poster/Admin thuan (isTasker false, xem javadoc component o tren).
+  // Danh muc nhom dich vu - dung chung cho ca "Ky nang da xac minh" (Tasker) va "Ban thuong
+  // thue viec gi" (Poster, xem showPosterPanel ben duoi), nen tai doc lap voi activeRole.
   useEffect(() => {
-    if (!isTasker) return
+    let cancelled = false
+    listServiceCategories()
+      .then((categoryList) => { if (!cancelled) setCategories(categoryList) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  // Ky nang da xac minh + lich lam viec chi ap dung khi dang xem o vai tro Tasker - khong
+  // goi API rieng cho Poster/Admin (showTaskerPanel false, xem javadoc component o tren).
+  useEffect(() => {
+    if (!showTaskerPanel) return
     let cancelled = false
 
     setSkillsLoading(true)
     setSkillsError('')
-    Promise.all([listServiceCategories(), getMySkills()])
-      .then(([categoryList, skillList]) => {
+    getMySkills()
+      .then((skillList) => {
         if (cancelled) return
-        setCategories(categoryList)
         setSkills(skillList)
       })
       .catch((error) => {
@@ -280,7 +311,7 @@ export function ProfilePage() {
       .catch(() => {})
 
     return () => { cancelled = true }
-  }, [isTasker])
+  }, [showTaskerPanel])
 
   /**
    * Doi ban kinh lam viec uu tien - luu ngay (PATCH mot phan, khong dung chung voi nut "Luu
@@ -302,6 +333,67 @@ export function ProfilePage() {
       setRadiusBusy(false)
     }
   }
+
+  /**
+   * Luu the "Gioi thieu ngan" cua Poster - tu dong luu ngay khi doi (khong co nut "Luu ho
+   * so" thu cong), doc lap voi editMode cua the "Thong tin ca nhan" ben tren. Nhan overrides
+   * vi cac handler goi ham nay ngay sau khi setState (setJobCategoryIds/setLocationType la
+   * bat dong bo, doc lai state cu se gui gia tri truoc do). jobCategoryIds luon gui (ke ca
+   * rong []) de dung dung ngu nghia "thay the toan bo" cua UpdateProfileRequest. Khong hien
+   * toast khi thanh cong (chi bao loi qua posterError) vi luu tu dong xay ra lien tuc theo
+   * moi lan bam chip/doi lua chon, toast lap lai se gay phien.
+   */
+  const handleSavePosterIntro = async (overrides?: {
+    jobCategoryIds?: Set<string>
+    locationType?: LocationType | ''
+    arrivalNotes?: string
+  }) => {
+    setPosterError('')
+    setPosterBusy(true)
+    try {
+      const updated = await updateMyProfile({
+        locationType: (overrides?.locationType ?? locationType) || undefined,
+        arrivalNotes: (overrides?.arrivalNotes ?? arrivalNotes).trim() || undefined,
+        jobCategoryIds: Array.from(overrides?.jobCategoryIds ?? jobCategoryIds),
+      })
+      applyProfile(updated)
+    } catch (error) {
+      setPosterError(error instanceof ApiError ? error.message : 'Không lưu được hồ sơ. Kiểm tra mạng rồi thử lại.')
+    } finally {
+      setPosterBusy(false)
+    }
+  }
+
+  /** Bam/bo 1 nhom dich vu trong Chip "Ban thuong thue viec gi" - tu luu ngay sau khi doi. */
+  const toggleJobCategory = (categoryId: string) => {
+    const next = new Set(jobCategoryIds)
+    if (next.has(categoryId)) next.delete(categoryId)
+    else next.add(categoryId)
+    setJobCategoryIds(next)
+    void handleSavePosterIntro({ jobCategoryIds: next })
+  }
+
+  /** Doi "Loai dia diem" cua the "Gioi thieu ngan" - tu luu ngay sau khi chon. */
+  const handleLocationTypeChange = (value: LocationType | '') => {
+    setLocationType(value)
+    void handleSavePosterIntro({ locationType: value })
+  }
+
+  /**
+   * Tu luu o "Luu y khi toi nha ban" sau khi nguoi dung ngung go 800ms - onBlur (roi khoi o)
+   * kho kich hoat hon vi phai chu dong click ra ngoai, debounce theo moi lan go phan hoi tu
+   * nhien hon. So sanh voi lastProfile de khong goi API neu noi dung khong doi (vd chi
+   * click vao roi ra ma khong sua gi, hoac effect nay tu chay lai sau khi handleSavePosterIntro
+   * cap nhat lastProfile trung voi arrivalNotes hien tai).
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (arrivalNotes.trim() === (lastProfile?.arrivalNotes ?? '').trim()) return
+      void handleSavePosterIntro()
+    }, 800)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivalNotes, lastProfile])
 
   /** Bam/bo chon 1 ngay trong nhom Chip "Them khung gio" - cho phep chon nhieu ngay cung luc (vd T2-T6). */
   const toggleSlotDay = (day: number) => {
@@ -502,7 +594,6 @@ export function ProfilePage() {
   const handleStartEdit = () => {
     setFormError('')
     setFieldErrors({})
-    setPhoneError('')
     setAvatarError('')
     setGeocodeError('')
     setEditMode(true)
@@ -513,7 +604,6 @@ export function ProfilePage() {
     if (lastProfile) applyProfile(lastProfile)
     setFieldErrors({})
     setFormError('')
-    setPhoneError('')
     setAvatarError('')
     setGeocodeError('')
     setEditMode(false)
@@ -530,31 +620,10 @@ export function ProfilePage() {
     if (!nextErrors.address && !addressText.trim()) nextErrors.address = 'Chọn địa chỉ.'
     setFieldErrors(nextErrors)
 
-    const nextPhoneError = phone.trim() ? '' : 'Nhập số điện thoại.'
-    setPhoneError(nextPhoneError)
-
-    if (nextErrors.fullName || nextErrors.operatingArea || nextErrors.address || nextPhoneError) return
+    if (nextErrors.fullName || nextErrors.operatingArea || nextErrors.address) return
 
     setFormError('')
     setBusy(true)
-
-    // Doi so dien thoai (neu co doi) TRUOC khi luu cac truong con lai - phone nam o
-    // AuthAccount (module Auth), khong phai user_profiles, nen la mot API call rieng (PATCH
-    // /auth/me/phone). Trung so voi tai khoan khac (AUTH-409-PHONE_EXISTS) thi to do o dung
-    // field va toast, dung nhu cac field khac, va DUNG luon o day - khong luu tiep cac truong
-    // con lai, tranh nguoi dung tuong da luu xong het trong khi so dien thoai chua doi duoc.
-    if (phone.trim() !== phoneAtLoad.trim()) {
-      try {
-        await updatePhone(phone.trim())
-        setPhoneAtLoad(phone.trim())
-      } catch (error) {
-        const message = error instanceof ApiError ? error.message : 'Không cập nhật được số điện thoại. Kiểm tra mạng rồi thử lại.'
-        setPhoneError(message)
-        useToastStore.getState().pushToast('danger', message)
-        setBusy(false)
-        return
-      }
-    }
 
     try {
       const updated = await updateMyProfile({
@@ -581,7 +650,7 @@ export function ProfilePage() {
   const verifiedSkills = skills.filter((skill) => skill.verificationStatus === 'VERIFIED')
   // Rail ben phai chi xuat hien khi co gi de hien: the ban do luc dang sua, hoac khoi "Xac
   // minh danh tinh" cho Tasker - khac editMode (chi rieng the ban do), phai tinh gop ca 2.
-  const hasSidebar = editMode || (isTasker && !!kycStatus)
+  const hasSidebar = editMode || (showTaskerPanel && !!kycStatus)
 
   return (
     <AppShell navValue="profile" title="Hồ sơ cá nhân" subtitle="Thông tin này hiển thị khi bạn đăng việc hoặc nhận việc">
@@ -645,12 +714,45 @@ export function ProfilePage() {
 
                 <div style={{ borderTop: 'var(--bw) solid var(--border-subtle)' }} />
 
+                {/* So dien thoai tach hoan toan khoi nut "Luu thay doi" chung, o ca che do
+                    xem lan sua - moi lan them/doi deu bat buoc qua PhoneChangeDialog (xac
+                    minh Firebase) truoc khi luu, khong con la field text thuong. O che do xem,
+                    chi hien nut khi da co so (an dinh, khong the tu bam sua) - neu CHUA co so
+                    thi ban than chu "Chưa xác minh" la link bam duoc (gach chan khi hover) de
+                    mo thang dialog, khong can vao che do sua truoc. */}
+                <DataRow
+                  label="Số điện thoại"
+                  value={
+                    editMode
+                      ? (
+                          <div className="flex items-center gap-3">
+                            <span>{phone || 'Chưa xác minh'}</span>
+                            <Button variant="secondary" size="sm" icon="phone" onClick={() => setShowPhoneChangeDialog(true)}>
+                              {phone ? 'Đổi số' : 'Xác minh số điện thoại'}
+                            </Button>
+                          </div>
+                        )
+                      : phone
+                        ? (
+                            <span>{phone}</span>
+                          )
+                        : (
+                            <button
+                              type="button"
+                              className="tc-underline-hover"
+                              onClick={() => setShowPhoneChangeDialog(true)}
+                              style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--text-link)', fontWeight: 'var(--fw-bold)' }}
+                            >
+                              Chưa xác minh
+                            </button>
+                          )
+                  }
+                />
+
                 {!editMode
                   ? (
                       <div className="flex flex-col">
-                        <DataRow label="Số điện thoại" value={phone || '—'} />
                         <DataRow label="Địa chỉ" value={addressText || '—'} />
-                        <DataRow label="Khu vực hoạt động" value={operatingArea || '—'} />
                         <div style={{ padding: 'var(--sp-3) 0' }}>
                           <div className="tc-label" style={{ marginBottom: 'var(--sp-2)' }}>Giới thiệu bản thân</div>
                           <p style={{ margin: 0, fontSize: 'var(--fs-body)', color: 'var(--text-body)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
@@ -661,15 +763,6 @@ export function ProfilePage() {
                     )
                   : (
                       <>
-                        <Field label="Số điện thoại" required error={phoneError}>
-                          <Input
-                            value={phone}
-                            onChange={(e) => { setPhone(e.target.value); setPhoneError('') }}
-                            disabled={busy}
-                            error={!!phoneError}
-                          />
-                        </Field>
-
                         <Field label="Họ và tên" required error={fieldErrors.fullName}>
                           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={busy} error={!!fieldErrors.fullName} />
                         </Field>
@@ -735,7 +828,71 @@ export function ProfilePage() {
                     )}
               </Card>
 
-              {isTasker && (
+              {showPosterPanel && (
+                <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+                  <div>
+                    <strong style={{ fontSize: 'var(--fs-h3)' }}>Giới thiệu ngắn</strong>
+                    <p style={{ margin: 'var(--sp-1) 0 0', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                      Người nhận việc đọc phần này trước khi quyết định ứng tuyển.
+                    </p>
+                  </div>
+
+                  {posterError && <Alert tone="danger" title="Không lưu được hồ sơ">{posterError}</Alert>}
+
+                  <Field label="Bạn thường thuê việc gì" hint="Giúp người nhận việc biết họ sẽ làm gì ở nhà bạn.">
+                    <div className="flex gap-2 flex-wrap">
+                      {categories.map((category) => (
+                        <Chip
+                          key={category.id}
+                          selected={jobCategoryIds.has(category.id)}
+                          onClick={() => !posterBusy && toggleJobCategory(category.id)}
+                        >
+                          {category.name}
+                        </Chip>
+                      ))}
+                    </div>
+                  </Field>
+
+                  <div>
+                    <div className="tc-label">Nơi làm việc</div>
+                    <p style={{ margin: 'var(--sp-1) 0 0', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      Loại địa điểm, khu vực hiển thị và lưu ý bên dưới cũng là giá trị mặc định khi bạn đăng việc — sửa lại được riêng cho từng tin đăng.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-4 flex-wrap">
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <Field label="Loại địa điểm">
+                        <Select
+                          value={locationType}
+                          onChange={(e) => handleLocationTypeChange(e.target.value as LocationType | '')}
+                          disabled={posterBusy}
+                          options={[{ value: '', label: 'Chưa chọn' }, ...LOCATION_TYPE_OPTIONS]}
+                        />
+                      </Field>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <Field
+                        label="Khu vực hiển thị công khai"
+                        hint="Lấy tự động từ Khu vực hoạt động ở phần Thông tin cá nhân."
+                      >
+                        <Input value={operatingArea} readOnly disabled />
+                      </Field>
+                    </div>
+                  </div>
+
+                  <Field label="Lưu ý khi tới nhà bạn">
+                    <Input
+                      value={arrivalNotes}
+                      maxLength={500}
+                      onChange={(e) => setArrivalNotes(e.target.value)}
+                      disabled={posterBusy}
+                    />
+                  </Field>
+                </Card>
+              )}
+
+              {showTaskerPanel && (
                 <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <strong style={{ fontSize: 'var(--fs-h3)' }}>Năng lực & lịch làm việc</strong>
@@ -770,16 +927,24 @@ export function ProfilePage() {
 
                   <div style={{ borderTop: 'var(--bw-hair) solid var(--border-subtle)' }} />
 
-                  <Field label="Bán kính làm việc ưu tiên" hint="Phạm vi bạn muốn nhận việc quanh khu vực hoạt động" error={radiusError}>
-                    <Select
-                      style={{ maxWidth: 200 }}
-                      value={preferredRadiusKm}
-                      onChange={(e) => void handleRadiusChange(e.target.value)}
-                      disabled={radiusBusy}
-                      error={!!radiusError}
-                      options={[{ value: '', label: 'Chưa đặt' }, ...RADIUS_OPTIONS]}
-                    />
-                  </Field>
+                  <div className="flex gap-4 flex-wrap">
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <Field label="Bán kính làm việc ưu tiên" hint="Phạm vi bạn muốn nhận việc quanh khu vực hoạt động" error={radiusError}>
+                        <Select
+                          value={preferredRadiusKm}
+                          onChange={(e) => void handleRadiusChange(e.target.value)}
+                          disabled={radiusBusy}
+                          error={!!radiusError}
+                          options={[{ value: '', label: 'Chưa đặt' }, ...RADIUS_OPTIONS]}
+                        />
+                      </Field>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <Field label="Khu vực hoạt động" hint="Lấy tự động từ Khu vực hoạt động ở phần Thông tin cá nhân.">
+                        <Input value={operatingArea} readOnly disabled />
+                      </Field>
+                    </div>
+                  </div>
 
                   <div style={{ borderTop: 'var(--bw-hair) solid var(--border-subtle)' }} />
 
@@ -859,7 +1024,7 @@ export function ProfilePage() {
 
             {hasSidebar && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)', position: 'sticky', top: 'var(--sp-5)' }}>
-                {isTasker && kycStatus && (
+                {showTaskerPanel && kycStatus && (
                   <Alert
                     tone={KYC_ALERT_TONE[kycStatus]}
                     icon={KYC_STATUS_ICON[kycStatus]}
@@ -894,6 +1059,17 @@ export function ProfilePage() {
             )}
             </div>
           )}
+
+      {showPhoneChangeDialog && (
+        <PhoneChangeDialog
+          currentPhone={phone || null}
+          onClose={() => setShowPhoneChangeDialog(false)}
+          onChanged={(newPhone) => {
+            setPhone(newPhone)
+            setShowPhoneChangeDialog(false)
+          }}
+        />
+      )}
     </AppShell>
   )
 }
