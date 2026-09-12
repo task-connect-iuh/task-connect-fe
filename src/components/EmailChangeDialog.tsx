@@ -11,6 +11,8 @@ import {
   verifyOldEmailForChange,
 } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
+import { DialogViewport } from './DialogViewport.tsx'
+import { useLockBodyScroll } from '../utils/useLockBodyScroll.ts'
 
 interface EmailChangeDialogProps {
   currentEmail: string
@@ -43,6 +45,7 @@ const RESTART_REQUIRED_CODES = new Set([
  * ***", email moi: "chuc mung") - khong lam o day, xem EmailChangedEvent.
  */
 export function EmailChangeDialog({ currentEmail, onClose, onChanged }: EmailChangeDialogProps) {
+  useLockBodyScroll(true)
   const [step, setStep] = useState<Step>('intro')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -155,106 +158,108 @@ export function EmailChangeDialog({ currentEmail, onClose, onChanged }: EmailCha
   }
 
   return (
-    <Dialog title="Đổi email" subtitle={step === 'success' ? undefined : 'Xác minh quyền sở hữu email hiện tại và email mới trước khi đổi'} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        {error && <Alert tone="danger" title="Có lỗi xảy ra">{error}</Alert>}
+    <DialogViewport>
+      <Dialog title="Đổi email" subtitle={step === 'success' ? undefined : 'Xác minh quyền sở hữu email hiện tại và email mới trước khi đổi'} onClose={onClose}>
+        <div className="flex flex-col gap-4">
+          {error && <Alert tone="danger" title="Có lỗi xảy ra">{error}</Alert>}
 
-        {step === 'intro' && (
-          <>
-            <p style={{ margin: 0, color: 'var(--text-body)' }}>
-              Chúng tôi sẽ gửi mã xác minh đến email hiện tại của bạn (<strong>{currentEmail}</strong>)
-              để xác nhận chính bạn là người yêu cầu đổi email.
-            </p>
-            <Button variant="primary" size="md" disabled={busy} onClick={() => void handleSendOld()} style={{ alignSelf: 'flex-end' }}>
-              {busy ? 'Đang gửi…' : 'Gửi mã xác minh'}
-            </Button>
-          </>
-        )}
-
-        {step === 'verify-old' && (
-          <>
-            <p style={{ margin: 0, color: 'var(--text-body)' }}>
-              Chúng tôi đã gửi mã xác minh đến email hiện tại của bạn (<strong>{currentEmail}</strong>).
-              Nhập mã đó để tiếp tục.
-            </p>
-            <Field label="Mã xác minh">
-              <Input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                numeric
-                placeholder="000000"
-                value={oldOtp}
-                onChange={(e) => setOldOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                disabled={busy}
-              />
-            </Field>
-            <div className="flex items-center justify-between gap-3">
-              <Button variant="ghost" size="sm" disabled={busy || oldCooldown > 0} onClick={() => void handleSendOld()}>
-                {oldCooldown > 0 ? `Gửi lại mã (${oldCooldown}s)` : 'Gửi lại mã'}
+          {step === 'intro' && (
+            <>
+              <p style={{ margin: 0, color: 'var(--text-body)' }}>
+                Chúng tôi sẽ gửi mã xác minh đến email hiện tại của bạn (<strong>{currentEmail}</strong>)
+                để xác nhận chính bạn là người yêu cầu đổi email.
+              </p>
+              <Button variant="primary" size="md" disabled={busy} onClick={() => void handleSendOld()} style={{ alignSelf: 'flex-end' }}>
+                {busy ? 'Đang gửi…' : 'Gửi mã xác minh'}
               </Button>
-              <Button variant="primary" size="md" disabled={busy || oldOtp.length < 6} onClick={() => void handleVerifyOld()}>
-                {busy ? 'Đang xác minh…' : 'Xác nhận'}
-              </Button>
-            </div>
-          </>
-        )}
+            </>
+          )}
 
-        {step === 'new-email' && (
-          <>
-            <p style={{ margin: 0, color: 'var(--text-body)' }}>Đã xác minh email hiện tại. Nhập email mới bạn muốn đổi sang.</p>
-            <Field label="Email mới" error={newEmailError}>
-              <Input
-                type="email"
-                value={newEmail}
-                onChange={(e) => { setNewEmail(e.target.value); setNewEmailError('') }}
-                error={!!newEmailError}
-                disabled={busy}
-              />
-            </Field>
-            <Button variant="primary" size="md" disabled={busy} onClick={() => void handleSendNew()} style={{ alignSelf: 'flex-end' }}>
-              {busy ? 'Đang gửi…' : 'Gửi mã xác minh'}
-            </Button>
-          </>
-        )}
+          {step === 'verify-old' && (
+            <>
+              <p style={{ margin: 0, color: 'var(--text-body)' }}>
+                Chúng tôi đã gửi mã xác minh đến email hiện tại của bạn (<strong>{currentEmail}</strong>).
+                Nhập mã đó để tiếp tục.
+              </p>
+              <Field label="Mã xác minh">
+                <Input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  numeric
+                  placeholder="000000"
+                  value={oldOtp}
+                  onChange={(e) => setOldOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  disabled={busy}
+                />
+              </Field>
+              <div className="flex items-center justify-between gap-3">
+                <Button variant="ghost" size="sm" disabled={busy || oldCooldown > 0} onClick={() => void handleSendOld()}>
+                  {oldCooldown > 0 ? `Gửi lại mã (${oldCooldown}s)` : 'Gửi lại mã'}
+                </Button>
+                <Button variant="primary" size="md" disabled={busy || oldOtp.length < 6} onClick={() => void handleVerifyOld()}>
+                  {busy ? 'Đang xác minh…' : 'Xác nhận'}
+                </Button>
+              </div>
+            </>
+          )}
 
-        {step === 'verify-new' && (
-          <>
-            <p style={{ margin: 0, color: 'var(--text-body)' }}>
-              Chúng tôi đã gửi mã xác minh đến <strong>{newEmail}</strong>. Nhập mã đó để hoàn tất đổi email.
-            </p>
-            <Field label="Mã xác minh">
-              <Input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                numeric
-                placeholder="000000"
-                value={newOtp}
-                onChange={(e) => setNewOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                disabled={busy}
-              />
-            </Field>
-            <div className="flex items-center justify-between gap-3">
-              <Button variant="ghost" size="sm" disabled={busy || newCooldown > 0} onClick={() => void handleSendNew()}>
-                {newCooldown > 0 ? `Gửi lại mã (${newCooldown}s)` : 'Gửi lại mã'}
+          {step === 'new-email' && (
+            <>
+              <p style={{ margin: 0, color: 'var(--text-body)' }}>Đã xác minh email hiện tại. Nhập email mới bạn muốn đổi sang.</p>
+              <Field label="Email mới" error={newEmailError}>
+                <Input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => { setNewEmail(e.target.value); setNewEmailError('') }}
+                  error={!!newEmailError}
+                  disabled={busy}
+                />
+              </Field>
+              <Button variant="primary" size="md" disabled={busy} onClick={() => void handleSendNew()} style={{ alignSelf: 'flex-end' }}>
+                {busy ? 'Đang gửi…' : 'Gửi mã xác minh'}
               </Button>
-              <Button variant="primary" size="md" disabled={busy || newOtp.length < 6} onClick={() => void handleConfirmNew()}>
-                {busy ? 'Đang xác minh…' : 'Xác nhận đổi email'}
-              </Button>
-            </div>
-          </>
-        )}
+            </>
+          )}
 
-        {step === 'success' && (
-          <>
-            <Alert tone="success" title="Đổi email thành công">
-              Email của bạn đã được đổi sang {newEmail}. Chúng tôi đã gửi thông báo đến cả email cũ và email mới.
-            </Alert>
-            <Button variant="primary" size="md" onClick={onClose} style={{ alignSelf: 'flex-end' }}>Đóng</Button>
-          </>
-        )}
-      </div>
-    </Dialog>
+          {step === 'verify-new' && (
+            <>
+              <p style={{ margin: 0, color: 'var(--text-body)' }}>
+                Chúng tôi đã gửi mã xác minh đến <strong>{newEmail}</strong>. Nhập mã đó để hoàn tất đổi email.
+              </p>
+              <Field label="Mã xác minh">
+                <Input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  numeric
+                  placeholder="000000"
+                  value={newOtp}
+                  onChange={(e) => setNewOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  disabled={busy}
+                />
+              </Field>
+              <div className="flex items-center justify-between gap-3">
+                <Button variant="ghost" size="sm" disabled={busy || newCooldown > 0} onClick={() => void handleSendNew()}>
+                  {newCooldown > 0 ? `Gửi lại mã (${newCooldown}s)` : 'Gửi lại mã'}
+                </Button>
+                <Button variant="primary" size="md" disabled={busy || newOtp.length < 6} onClick={() => void handleConfirmNew()}>
+                  {busy ? 'Đang xác minh…' : 'Xác nhận đổi email'}
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === 'success' && (
+            <>
+              <Alert tone="success" title="Đổi email thành công">
+                Email của bạn đã được đổi sang {newEmail}. Chúng tôi đã gửi thông báo đến cả email cũ và email mới.
+              </Alert>
+              <Button variant="primary" size="md" onClick={onClose} style={{ alignSelf: 'flex-end' }}>Đóng</Button>
+            </>
+          )}
+        </div>
+      </Dialog>
+    </DialogViewport>
   )
 }

@@ -12,12 +12,14 @@ export interface TokenResponse {
   accountId: string
   status: AccountStatus
   roles: AccountRole[]
+  /** true CHI khi day la lan dang nhap thanh cong DAU TIEN cua tai khoan - dung de dieu
+   *  huong sang man xac minh so dien thoai dung 1 lan duy nhat, xem postLoginRedirect.ts. */
+  firstLogin: boolean
 }
 
 export interface RegisterPayload {
   fullName: string
   email: string
-  phone?: string
   password: string
   confirmPassword: string
   roles: AccountRole[]
@@ -96,9 +98,17 @@ export function changePassword(payload: { currentPassword: string, newPassword: 
   return apiFetch<void>('/auth/change-password', { method: 'POST', body: payload })
 }
 
-/** Doi so dien thoai khi da dang nhap - loi AUTH-409-PHONE_EXISTS neu so nay da duoc tai khoan khac dung. Khac changePassword: khong thu hoi phien. */
-export function updatePhone(phone: string) {
-  return apiFetch<void>('/auth/me/phone', { method: 'PATCH', body: { phone } })
+/** Doi/them so dien thoai khi da dang nhap - phai kem newFirebaseIdToken vua xac minh xong
+ *  cho so MOI qua Firebase Phone Auth (xem features/auth/PhoneVerificationFlow.tsx), backend
+ *  xac minh lai token nay va doi chieu claim phone_number truoc khi luu. Khi DOI so (tai khoan
+ *  da co so cu duoc xac minh), phai kem them oldFirebaseIdToken vua xac minh xong cho so CU -
+ *  xem PhoneChangeDialog.tsx; bo trong khi day la lan dau them so (khong co gi de chung minh
+ *  quyen so huu so cu). Loi AUTH-409-PHONE_EXISTS neu so nay da duoc tai khoan khac dung,
+ *  AUTH-400-PHONE_VERIFICATION_MISMATCH neu token so moi xac minh cho mot so khac,
+ *  AUTH-409-OLD_PHONE_NOT_VERIFIED neu thieu/sai oldFirebaseIdToken luc doi so. Khac
+ *  changePassword: khong thu hoi phien. */
+export function updatePhone(phone: string, newFirebaseIdToken: string, oldFirebaseIdToken?: string) {
+  return apiFetch<void>('/auth/me/phone', { method: 'PATCH', body: { phone, newFirebaseIdToken, oldFirebaseIdToken } })
 }
 
 // ---------------------------------------------------------------------------

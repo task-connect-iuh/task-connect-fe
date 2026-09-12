@@ -1,4 +1,5 @@
 import { apiFetch } from './client.ts'
+import type { LocationType } from './users.ts'
 
 // Khop dung enum that cua backend, xem vn.taskconnect.task.api.TaskStatus (01-domain-glossary.md
 // "Cong viec"). Dot nay (dang viec toi gian) chi tao Task o thang OPEN ngay - cac gia tri con
@@ -15,6 +16,10 @@ export interface CreateTaskPayload {
   addressText: string
   lat: number
   lng: number
+  // Loai dia diem + luu y khi toi noi - FE dien san tu ho so Poster luc mo form (xem
+  // PostTaskPage.tsx), nguoi dung sua duoc rieng cho cong viec nay, khong bat buoc.
+  locationType?: LocationType
+  arrivalNotes?: string
   budgetAmount?: number
   // ISO datetime (tu <input type="datetime-local">) - tuy chon, de trong hien thi "thoa thuan".
   scheduledAt?: string
@@ -33,6 +38,8 @@ export interface TaskResponse {
   addressText: string
   lat: number
   lng: number
+  locationType: LocationType | null
+  arrivalNotes: string | null
   budgetAmount: number | null
   scheduledAt: string | null
   estimatedWorkersNeeded: number

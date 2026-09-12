@@ -32,10 +32,10 @@ const OVERVIEW_NAV: NavItem[] = [
 const POSTER_ONLY_NAV: NavItem[] = [
   { value: 'post', label: 'Đăng việc', icon: 'file-plus-2', to: '/dang-viec' },
   { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list', to: '/viec-cua-toi' },
+  { value: 'matches', label: 'Tasker gợi ý', icon: 'radar' },
 ]
 
 const REST_NAV: NavItem[] = [
-  { value: 'matches', label: 'Tasker gợi ý', icon: 'radar' },
   { value: 'chat', label: 'Tin nhắn', icon: 'message-square' },
   { value: 'profile', label: 'Hồ sơ', icon: 'user-round', to: '/ho-so' },
 ]

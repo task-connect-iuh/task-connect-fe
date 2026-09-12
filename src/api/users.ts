@@ -10,6 +10,9 @@ export type Gender = 'MALE' | 'FEMALE' | 'OTHER'
 export type SkillVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'CANCELLED'
 export type CertificationStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED'
 export type KycImageSide = 'FRONT' | 'BACK'
+// Khop vn.taskconnect.user.api.LocationType - Task Poster tu khai bao trong phan "Gioi
+// thieu ngan" tren ProfilePage.tsx, khong ap dung cho Tasker.
+export type LocationType = 'NHA_RIENG' | 'CAN_HO_CHUNG_CU' | 'CUA_HANG' | 'VAN_PHONG'
 
 export interface ProfileResponse {
   accountId: string
@@ -21,6 +24,11 @@ export interface ProfileResponse {
   locationLat: number | null
   locationLng: number | null
   preferredRadiusKm: number | null
+  // locationType/arrivalNotes/jobCategoryIds: chi Poster dung toi (phan "Gioi thieu ngan"),
+  // null/rong khi chua khai bao - xem V22/V23 o backend.
+  locationType: LocationType | null
+  arrivalNotes: string | null
+  jobCategoryIds: string[]
   kycStatus: KycStatus
   email: string | null
   phone: string | null
@@ -58,6 +66,11 @@ export interface UpdateProfilePayload {
   locationLat?: number
   locationLng?: number
   preferredRadiusKm?: number
+  locationType?: LocationType
+  arrivalNotes?: string
+  // undefined = khong gui field nay (giu nguyen), [] = xoa het lua chon cu - khac nhau ro
+  // rang o body JSON, xem UpdateProfileRequest.java.
+  jobCategoryIds?: string[]
 }
 
 export interface AvatarUploadUrlResponse {
@@ -322,4 +335,46 @@ export function updateAvailabilitySlot(slotId: string, payload: Partial<Availabi
 
 export function deleteAvailabilitySlot(slotId: string) {
   return apiFetch<void>(`/users/me/tasker-availability/${slotId}`, { method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// So dia chi Poster tu luu de chon nhanh khi dang viec (vd "Nha", "Cong ty") - giong so dia
+// chi giao hang Shopee, doc lap voi addressText cua ho so va cua tung tin dang.
+// ---------------------------------------------------------------------------
+
+export interface SavedAddressResponse {
+  id: string
+  label: string
+  addressText: string
+  lat: number
+  lng: number
+  locationType: LocationType | null
+  arrivalNotes: string | null
+}
+
+export interface SavedAddressPayload {
+  label: string
+  addressText: string
+  lat: number
+  lng: number
+  locationType?: LocationType
+  arrivalNotes?: string
+}
+
+/** Luu mot dia chi moi - chi tai khoan mang role TASK_POSTER goi duoc. */
+export function addSavedAddress(payload: SavedAddressPayload) {
+  return apiFetch<SavedAddressResponse>('/users/me/saved-addresses', { method: 'POST', body: payload })
+}
+
+/** Toan bo dia chi da luu cua chinh minh, moi luu gan day nhat truoc. */
+export function getMySavedAddresses() {
+  return apiFetch<SavedAddressResponse[]>('/users/me/saved-addresses')
+}
+
+export function updateSavedAddress(addressId: string, payload: Partial<SavedAddressPayload>) {
+  return apiFetch<SavedAddressResponse>(`/users/me/saved-addresses/${addressId}`, { method: 'PATCH', body: payload })
+}
+
+export function deleteSavedAddress(addressId: string) {
+  return apiFetch<void>(`/users/me/saved-addresses/${addressId}`, { method: 'DELETE' })
 }

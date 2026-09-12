@@ -11,15 +11,12 @@ import { PasswordInput } from '../features/auth/PasswordInput.tsx'
 import { register } from '../api/auth.ts'
 import type { TokenResponse } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
+import { finishLoginAndRedirect } from '../features/auth/postLoginRedirect.ts'
 import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
-import { broadcastSession } from '../stores/authBroadcast.ts'
-import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
-import { useToastStore } from '../stores/useToastStore.ts'
 import { suggestEmailDomain } from '../utils/emailSuggestion.ts'
 import { toTitleCase } from '../utils/formatName.ts'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
-const PHONE_PATTERN = /^0\d{9}$/
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/
 
 const STRENGTH_LABELS = [
@@ -46,15 +43,12 @@ function passwordStrength(value: string) {
 export function RegisterPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const setSession = useAuthStore((state) => state.setSession)
-  const pushToast = useToastStore((state) => state.pushToast)
   // Du lieu mang ve tu man Nhap ma xac minh khi bam "Sua lai" - de khong bat nguoi dung go
   // lai tu dau (tru mat khau, khong mang qua lai vi ly do bao mat).
-  const backState = location.state as { name?: string; email?: string; phone?: string } | null
+  const backState = location.state as { name?: string; email?: string } | null
 
   const [name, setName] = useState(backState?.name ?? '')
   const [email, setEmail] = useState(backState?.email ?? '')
-  const [phone, setPhone] = useState(backState?.phone ?? '')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -78,10 +72,6 @@ export function RegisterPage() {
     if (!email.trim()) nextErrors.email = 'Nhập email để nhận mã xác minh.'
     else if (!EMAIL_PATTERN.test(email.trim())) nextErrors.email = 'Email chưa đúng định dạng.'
 
-    if (phone.trim() && !PHONE_PATTERN.test(phone.trim().replace(/[\s.]/g, ''))) {
-      nextErrors.phone = 'Gồm 10 chữ số, bắt đầu bằng 0.'
-    }
-
     if (!password) nextErrors.password = 'Tạo mật khẩu.'
     else if (!PASSWORD_PATTERN.test(password)) nextErrors.password = 'Cần ít nhất 8 ký tự, có chữ hoa, chữ thường và số.'
 
@@ -95,16 +85,13 @@ export function RegisterPage() {
   }
 
   // Dang ky bang Google khac dang ky bang mat khau: tai khoan Google vao thang ACTIVE, khong
-  // qua OTP - nen dang nhap that su ngay (set session, dieu huong /tong-quan) thay vi sang
-  // /xac-minh nhu register() thuong. Toast ghi "dang nhap" chu khong phai "dang ky" vi nhanh
-  // xac nhan lien ket (email da co tai khoan tu truoc) thuc chat la dang nhap vao tai khoan
-  // cu, khong phai tao moi - "dang ky thanh cong" se sai trong truong hop do.
+  // qua OTP - nen dang nhap that su ngay (finishLoginAndRedirect tu set session + dieu huong,
+  // ke ca sang cong xac minh so dien thoai neu day la lan dang nhap dau tien) thay vi sang
+  // /xac-minh nhu register() thuong. Toast "dang nhap" (khong phai "dang ky") vi nhanh xac
+  // nhan lien ket (email da co tai khoan tu truoc) thuc chat la dang nhap vao tai khoan cu,
+  // khong phai tao moi - "dang ky thanh cong" se sai trong truong hop do.
   const handleGoogleSuccess = (tokens: TokenResponse) => {
-    const session = sessionFromTokenResponse(tokens)
-    setSession(session)
-    broadcastSession(session)
-    pushToast('success', 'Đăng nhập thành công.')
-    navigate('/tong-quan', { replace: true })
+    finishLoginAndRedirect(tokens, navigate)
   }
 
   const handleGoogleError = (error: unknown) => {
@@ -122,7 +109,6 @@ export function RegisterPage() {
       await register({
         fullName: normalizedName,
         email: email.trim(),
-        phone: phone.trim() || undefined,
         password,
         confirmPassword,
         roles: ['TASK_POSTER', 'TASKER'],
@@ -134,9 +120,8 @@ export function RegisterPage() {
           mode: 'signup',
           email: email.trim(),
           name: normalizedName,
-          phone: phone.trim(),
           backPath: '/dang-ky',
-          backState: { name: normalizedName, email: email.trim(), phone: phone.trim() },
+          backState: { name: normalizedName, email: email.trim() },
         },
         replace: true,
       })
@@ -144,8 +129,6 @@ export function RegisterPage() {
       if (error instanceof ApiError && error.code === 'AUTH-409-EMAIL_EXISTS') {
         setErrors((current) => ({ ...current, email: error.message }))
         setEmailExists(true)
-      } else if (error instanceof ApiError && error.code === 'AUTH-409-PHONE_EXISTS') {
-        setErrors((current) => ({ ...current, phone: error.message }))
       } else if (error instanceof ApiError) {
         setFormError(error.message)
       } else {
@@ -183,6 +166,18 @@ export function RegisterPage() {
         {formError && <Alert tone="danger" title="Không tạo được tài khoản">{formError}</Alert>}
 
         <div className="flex flex-col gap-4">
+          <Field label="Họ và tên" error={errors.name}>
+            <Input
+              icon="user"
+              placeholder="Nguyễn Thị Mai"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => setName((current) => (current.trim() ? toTitleCase(current) : current))}
+              error={!!errors.name}
+              disabled={busy}
+            />
+          </Field>
+
           <Field label="Email" error={errors.email}>
             <Input
               icon="at-sign"
@@ -211,23 +206,6 @@ export function RegisterPage() {
               </p>
             )}
           </Field>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Họ và tên" error={errors.name}>
-              <Input
-                icon="user"
-                placeholder="Nguyễn Thị Mai"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => setName((current) => (current.trim() ? toTitleCase(current) : current))}
-                error={!!errors.name}
-                disabled={busy}
-              />
-            </Field>
-            <Field label="Số điện thoại" hint="Không bắt buộc" error={errors.phone}>
-              <Input icon="phone" placeholder="0901 234 567" value={phone} onChange={(e) => setPhone(e.target.value)} error={!!errors.phone} disabled={busy} />
-            </Field>
-          </div>
 
           {emailExists && (
             <Alert tone="warning" title="Email này đã có tài khoản">

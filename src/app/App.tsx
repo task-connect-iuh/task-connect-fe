@@ -7,6 +7,7 @@ import { LandingPage } from '../pages/LandingPage.tsx'
 import { LoginPage } from '../pages/LoginPage.tsx'
 import { NotFoundPage } from '../pages/NotFoundPage.tsx'
 import { OverviewPage } from '../pages/OverviewPage.tsx'
+import { PhoneVerificationGatePage } from '../pages/PhoneVerificationGatePage.tsx'
 import { PostTaskPage } from '../pages/PostTaskPage.tsx'
 import { PrivacyPage } from '../pages/PrivacyPage.tsx'
 import { ProfilePage } from '../pages/ProfilePage.tsx'
@@ -119,6 +120,7 @@ function App() {
         <Route path="/dang-nhap" element={<GuestGuard><LoginPage /></GuestGuard>} />
         <Route path="/dang-ky" element={<GuestGuard><RegisterPage /></GuestGuard>} />
         <Route path="/xac-minh" element={<VerifyEmailPage />} />
+        <Route path="/xac-minh-so-dien-thoai" element={<PhoneVerificationGatePage />} />
         <Route path="/quen-mat-khau" element={<GuestGuard><ForgotPasswordPage /></GuestGuard>} />
         <Route path="/dat-lai-mat-khau" element={<ResetPasswordPage />} />
         <Route path="/dieu-khoan" element={<TermsPage />} />

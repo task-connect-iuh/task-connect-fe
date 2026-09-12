@@ -101,6 +101,25 @@ export function TaskerFeedPage() {
     <AppShell navValue="feed" title="Việc quanh bạn" subtitle="5 nhóm dịch vụ điện – nước">
       {(loadError || eligibilityError) && <Alert tone="danger" title="Không tải được dữ liệu">{loadError || eligibilityError}</Alert>}
 
+      {ready && kycStatus !== 'VERIFIED' && (
+        <KycStatus
+          state={toKycStatusState(kycStatus)}
+          reason={
+            kycStatus === 'VERIFYING'
+              ? 'Hồ sơ của bạn đang chờ duyệt (thường trong 24 giờ). Bạn xem được toàn bộ feed, nhưng chưa thể ứng tuyển.'
+              : kycStatus === 'REJECTED'
+                ? 'Hồ sơ xác minh danh tính bị từ chối. Nộp lại để có thể ứng tuyển việc.'
+                : 'Bạn cần xác minh danh tính (KYC) trước khi ứng tuyển việc.'
+          }
+          action={
+            <Button size="sm" variant="secondary" onClick={() => navigate('/xac-thuc-danh-tinh')}>
+              {kycStatus === 'VERIFYING' || kycStatus === 'REJECTED' ? 'Xem hồ sơ xác minh' : 'Đến xác minh'}
+            </Button>
+          }
+          style={{ marginBottom: 'var(--sp-5)' }}
+        />
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 'var(--sp-6)', alignItems: 'start' }}>
         <div className="flex flex-col gap-5" style={{ position: 'sticky', top: 'var(--sp-5)' }}>
           <Card padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
@@ -117,20 +136,6 @@ export function TaskerFeedPage() {
               </div>
             </div>
           </Card>
-
-          {ready && kycStatus !== 'VERIFIED' && (
-            <KycStatus
-              state={toKycStatusState(kycStatus)}
-              reason={
-                kycStatus === 'VERIFYING'
-                  ? 'Hồ sơ của bạn đang chờ duyệt (thường trong 24 giờ). Bạn xem được toàn bộ feed, nhưng chưa thể ứng tuyển.'
-                  : kycStatus === 'REJECTED'
-                    ? 'Hồ sơ xác minh danh tính bị từ chối. Nộp lại để có thể ứng tuyển việc.'
-                    : 'Bạn cần xác minh danh tính (KYC) trước khi ứng tuyển việc.'
-              }
-              action={<Button size="sm" variant="secondary" onClick={() => navigate('/xac-thuc-danh-tinh')}>Xem hồ sơ xác minh</Button>}
-            />
-          )}
         </div>
 
         <div className="flex flex-col gap-4">

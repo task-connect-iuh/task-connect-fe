@@ -10,10 +10,8 @@ import { PasswordInput } from '../features/auth/PasswordInput.tsx'
 import { login, resendVerification } from '../api/auth.ts'
 import type { TokenResponse } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
+import { finishLoginAndRedirect } from '../features/auth/postLoginRedirect.ts'
 import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
-import { broadcastSession } from '../stores/authBroadcast.ts'
-import { sessionFromTokenResponse, useAuthStore } from '../stores/useAuthStore.ts'
-import { useToastStore } from '../stores/useToastStore.ts'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 
@@ -29,8 +27,6 @@ const FAILED_ATTEMPT_WARNING_THRESHOLD = 3
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const setSession = useAuthStore((state) => state.setSession)
-  const pushToast = useToastStore((state) => state.pushToast)
 
   const [email, setEmail] = useState((location.state as { email?: string } | null)?.email ?? '')
   const [password, setPassword] = useState('')
@@ -66,19 +62,11 @@ export function LoginPage() {
   }
 
   // Dung chung cho dang nhap bang mat khau va dang nhap bang Google - ca 2 cung tra ve
-  // TokenResponse va di den cung mot noi sau khi thanh cong.
+  // TokenResponse va di den cung mot noi sau khi thanh cong (finishLoginAndRedirect tu set
+  // session TRUOC roi moi navigate - /tong-quan boc RoleGuard, doi hoi session da co san).
   const finishLogin = (tokens: TokenResponse) => {
-    // /tong-quan boc RoleGuard, doi hoi session da co san moi cho vao - phai setSession
-    // TRUOC roi moi navigate, neu dieu huong truoc se bi RoleGuard doc duoc session con
-    // null va da nguoc ve /dang-nhap ngay lap tuc.
-    const session = sessionFromTokenResponse(tokens)
-    setSession(session)
-    // Bao cac tab khac cung trinh duyet biet vua dang nhap, khong can F5 ben do nua -
-    // xem authBroadcast.ts.
-    broadcastSession(session)
-    pushToast('success', 'Đăng nhập thành công.')
     const from = (location.state as { from?: string } | null)?.from
-    navigate(from && from !== '/dang-nhap' ? from : '/tong-quan', { replace: true })
+    finishLoginAndRedirect(tokens, navigate, { from })
   }
 
   // Loi dang nhap Google khong phai "can xac nhan lien ket" (GoogleAuthButton da tu xu ly

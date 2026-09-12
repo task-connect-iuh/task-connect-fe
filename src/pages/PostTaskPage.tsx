@@ -5,6 +5,7 @@ import { AISuggestion } from '@ds/components/marketplace/AISuggestion'
 import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
 import { Checkbox } from '@ds/components/forms/Checkbox'
+import { Chip } from '@ds/components/core/Chip'
 import { DataRow } from '@ds/components/marketplace/DataRow'
 import { Field } from '@ds/components/forms/Field'
 import { Icon } from '@ds/components/core/Icon'
@@ -18,11 +19,12 @@ import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
 import { TimeSelect } from '../components/TimeSelect.tsx'
 import { createTask, createTaskImageUploadUrl } from '../api/tasks.ts'
-import { getMyProfile, listServiceCategories } from '../api/users.ts'
-import type { ServiceCategoryResponse } from '../api/users.ts'
+import { addSavedAddress, deleteSavedAddress, getMyProfile, getMySavedAddresses, listServiceCategories } from '../api/users.ts'
+import type { LocationType, SavedAddressResponse, ServiceCategoryResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
 import type { AddressSuggestion } from '../utils/geocoding.ts'
+import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
@@ -74,13 +76,17 @@ interface PendingImage {
 /**
  * Dang cong viec (UC06 toi gian) - UC06, chi tao. Xem/sua/huy va UC10/UC11 (Tasker
  * ung tuyen, Poster xac nhan) lam dot sau, xem docs/PROGRESS-TASK-POSTER-MODULE.md.
- * Dia diem cong viec (addressText/lat/lng) la truong rieng cua Task, KHONG lay tu ho
- * so (user_profiles) - Poster co the dang viec o noi khac noi ho dang o. Chon dia diem
- * theo dung 2 huong cua ProfilePage.tsx (go dia chi + chon tu dropdown goi y, hoac bam/keo
- * ghim tren ban do, kem nut "Dung vi tri hien tai") - lat/lng khong con o nhap rieng tren
- * giao dien nhung van la truong bat buoc gui xuong BE, suy ra tu 1 trong 2 cach chon do.
- * Ngan sach va thoi gian mong muon deu tuy chon (khong bat buoc) theo quyet dinh da chot voi
- * nguoi dung. Chi role TASK_POSTER vao duoc trang nay (RoleGuard o App.tsx).
+ * Dia diem cong viec (addressText/lat/lng/locationType/arrivalNotes, nhom trong khoi "Noi
+ * lam viec") la truong rieng cua Task, KHONG lay tu ho so (user_profiles) - Poster co the
+ * dang viec o noi khac noi ho dang o. Chon dia diem theo dung 2 huong cua ProfilePage.tsx (go
+ * dia chi + chon tu dropdown goi y, hoac bam/keo ghim tren ban do, kem nut "Dung vi tri hien
+ * tai") - lat/lng khong con o nhap rieng tren giao dien nhung van la truong bat buoc gui
+ * xuong BE, suy ra tu 1 trong 2 cach chon do. Ca 5 truong trong khoi "Noi lam viec" deu dien
+ * san tu ho so Poster luc mo trang (1 lan luc mount, khong dong bo 2 chieu ve sau, xem
+ * useEffect ben duoi) nhung sua duoc rieng, CHi ap dung cho tin dang nay - locationType/
+ * arrivalNotes khong bat buoc. Ngan sach va thoi gian mong muon deu tuy chon (khong bat
+ * buoc) theo quyet dinh da chot voi nguoi dung. Chi role TASK_POSTER vao duoc trang nay
+ * (RoleGuard o App.tsx).
  */
 export function PostTaskPage() {
   const navigate = useNavigate()
@@ -98,6 +104,20 @@ export function PostTaskPage() {
   const [locationResetSignal, setLocationResetSignal] = useState(0)
   const [geocoding, setGeocoding] = useState(false)
   const [geocodeError, setGeocodeError] = useState('')
+  // Loai dia diem + luu y khi toi noi - cung dien san tu ho so nhu addressText/lat/lng ben
+  // tren, nhung la truong RIENG cua Task (xem CreateTaskPayload.locationType/arrivalNotes).
+  const [locationType, setLocationType] = useState<LocationType | ''>('')
+  const [arrivalNotes, setArrivalNotes] = useState('')
+  // So dia chi tu luu de chon nhanh (giong so dia chi giao hang Shopee) - doc lap voi
+  // addressText/lat/lng/locationType/arrivalNotes o tren, chi la danh sach goi y de dien
+  // nhanh ca 5 truong cung luc. selectedSavedAddressId chi de highlight Chip dang chon,
+  // khong anh huong logic submit (van gui addressText/lat/lng hien tai trong form).
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddressResponse[]>([])
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState<string | null>(null)
+  const [showSaveAddressForm, setShowSaveAddressForm] = useState(false)
+  const [newAddressLabel, setNewAddressLabel] = useState('')
+  const [savingAddress, setSavingAddress] = useState(false)
+  const [savedAddressError, setSavedAddressError] = useState('')
   const [budget, setBudget] = useState('')
   // Ngay + gio mong muon, tach rieng thay vi 1 <input type="datetime-local"> - trinh duyet cho
   // go phut le (vd "00:01"), BE nhan Instant.parse() nghiem ngat (ISO-8601 co giay + timezone)
@@ -115,6 +135,11 @@ export function PostTaskPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
+  // null = chua tai xong ho so (chua biet), false = chua co so xac minh, true = da co. profile.phone
+  // chi khac null khi da xac minh qua Firebase Phone Auth (PATCH /auth/me/phone luon ghi phone +
+  // phone_verified_at cung luc, xem docs/DECISIONS-LOG.md #33) - khong co truong hop phone khac null
+  // ma chua xac minh, nen dung thang gia tri nay lam dieu kien chan nut Dang viec.
+  const [phoneVerified, setPhoneVerified] = useState<boolean | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const lightbox = useImageLightbox()
@@ -123,6 +148,12 @@ export function PostTaskPage() {
     listServiceCategories()
       .then(setCategories)
       .catch((error) => setCategoriesError(error instanceof ApiError ? error.message : 'Không tải được danh sách nhóm dịch vụ.'))
+  }, [])
+
+  useEffect(() => {
+    getMySavedAddresses()
+      .then(setSavedAddresses)
+      .catch(() => {})
   }, [])
 
   // Dien san dia chi cong viec tu ho so ca nhan (neu co) ngay luc vao trang, cho tien - Poster
@@ -139,8 +170,11 @@ export function PostTaskPage() {
           setLocationLat(profile.locationLat.toFixed(6))
           setLocationLng(profile.locationLng.toFixed(6))
         }
+        if (profile.locationType) setLocationType(profile.locationType)
+        if (profile.arrivalNotes) setArrivalNotes(profile.arrivalNotes)
+        setPhoneVerified(!!profile.phone)
       })
-      .catch(() => {})
+      .catch(() => setPhoneVerified(false))
   }, [])
 
   const uploadingCount = images.filter((img) => img.uploading).length
@@ -165,6 +199,7 @@ export function PostTaskPage() {
       setLocationLat(latValue.toFixed(6))
       setLocationLng(lngValue.toFixed(6))
       if (result.addressText) setAddressText(result.addressText)
+      setSelectedSavedAddressId(null)
       setErrors((prev) => ({ ...prev, addressText: '' }))
     } catch (error) {
       setGeocodeError(error instanceof Error ? error.message : 'Không xác minh được khu vực do lỗi mạng. Toạ độ chưa được lưu, thử lại.')
@@ -181,12 +216,70 @@ export function PostTaskPage() {
     setLocationLng(suggestion.lng.toFixed(6))
     setAddressText(suggestion.addressText)
     setLocationResetSignal((n) => n + 1)
+    setSelectedSavedAddressId(null)
     setErrors((prev) => ({ ...prev, addressText: '' }))
   }
 
   /** AddressAutocomplete bao ve day khi khong tim ra goi y nao cho van ban dang go - chan nut Dang viec. */
   const handleAddressValidity = (invalid: boolean) => {
     setErrors((prev) => ({ ...prev, addressText: invalid ? 'Không tìm thấy địa chỉ này. Hãy chọn địa chỉ khác hoặc chọn vị trí trên bản đồ.' : '' }))
+  }
+
+  /**
+   * Chon 1 dia chi da luu tu Chip - dien ca 5 truong (dia chi/toa do/loai dia diem/luu y)
+   * cung luc, ke ca truong nao dang rong o dia chi da luu (vd locationType null se xoa
+   * lua chon dang co, khac ngu nghia PATCH "null = khong doi" o cac form khac trong app -
+   * o day la GAN GIA TRI vao form dang sua, khong phai PATCH mot phan).
+   */
+  const applySavedAddress = (address: SavedAddressResponse) => {
+    setGeocodeError('')
+    setAddressText(address.addressText)
+    setLocationLat(address.lat.toFixed(6))
+    setLocationLng(address.lng.toFixed(6))
+    setLocationType(address.locationType ?? '')
+    setArrivalNotes(address.arrivalNotes ?? '')
+    setLocationResetSignal((n) => n + 1)
+    setSelectedSavedAddressId(address.id)
+    setErrors((prev) => ({ ...prev, addressText: '' }))
+  }
+
+  const handleDeleteSavedAddress = async (addressId: string) => {
+    try {
+      await deleteSavedAddress(addressId)
+      setSavedAddresses((prev) => prev.filter((a) => a.id !== addressId))
+      setSelectedSavedAddressId((prev) => (prev === addressId ? null : prev))
+    } catch (error) {
+      useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : 'Không xoá được địa chỉ.')
+    }
+  }
+
+  /** Luu dia chi dang dien trong form (addressText/toa do/loai dia diem/luu y hien tai) thanh 1 dia chi moi de chon nhanh lan sau. */
+  const handleSaveCurrentAddress = async () => {
+    if (!newAddressLabel.trim()) {
+      setSavedAddressError('Nhập tên gợi nhớ, vd "Nhà", "Công ty".')
+      return
+    }
+    setSavedAddressError('')
+    setSavingAddress(true)
+    try {
+      const created = await addSavedAddress({
+        label: newAddressLabel.trim(),
+        addressText: addressText.trim(),
+        lat: Number(locationLat),
+        lng: Number(locationLng),
+        locationType: locationType || undefined,
+        arrivalNotes: arrivalNotes.trim() || undefined,
+      })
+      setSavedAddresses((prev) => [created, ...prev])
+      setSelectedSavedAddressId(created.id)
+      setShowSaveAddressForm(false)
+      setNewAddressLabel('')
+      useToastStore.getState().pushToast('success', 'Đã lưu địa chỉ.')
+    } catch (error) {
+      setSavedAddressError(error instanceof ApiError ? error.message : 'Không lưu được địa chỉ.')
+    } finally {
+      setSavingAddress(false)
+    }
   }
 
   const handleUseCurrentLocation = () => {
@@ -268,6 +361,8 @@ export function PostTaskPage() {
         addressText: addressText.trim(),
         lat: Number(locationLat),
         lng: Number(locationLng),
+        locationType: locationType || undefined,
+        arrivalNotes: arrivalNotes.trim() || undefined,
         budgetAmount: budget.trim() ? Number(budget) : undefined,
         scheduledAt: buildScheduledAtIso(scheduledDate, scheduledTime),
         estimatedWorkersNeeded: DEFAULT_ESTIMATED_WORKERS_NEEDED,
@@ -292,6 +387,18 @@ export function PostTaskPage() {
   return (
     <AppShell navValue="post" title="Đăng việc" subtitle="Mô tả công việc cần làm, Tasker phù hợp sẽ ứng tuyển">
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,var(--content-max)) 1fr', gap: 'var(--sp-6)', alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
+          {phoneVerified === false && (
+            <Alert
+              tone="warning"
+              title="Cần xác minh số điện thoại"
+              action={<Button size="sm" variant="secondary" icon="phone" onClick={() => navigate('/ho-so')}>Xác minh số điện thoại</Button>}
+              style={{ border: 'var(--bw) solid var(--amber-700)' }}
+            >
+              Bạn cần xác minh số điện thoại trước khi đăng việc, để Tasker liên lạc được với bạn.
+            </Alert>
+          )}
+
         <Card padding="var(--sp-6)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
           {categoriesError && <Alert tone="danger" title="Không tải được dữ liệu">{categoriesError}</Alert>}
           {formError && <Alert tone="danger" title="Không đăng được việc">{formError}</Alert>}
@@ -337,19 +444,113 @@ export function PostTaskPage() {
             />
           </Field>
 
-          <Field
-            label="Địa chỉ cần thực hiện công việc"
-            required
-            error={errors.addressText}
-            hint="Tự điền từ hồ sơ của bạn nếu có — gõ để tìm và chọn từ danh sách gợi ý, hoặc chọn vị trí trên bản đồ bên phải, để sửa lại nếu khác nơi ở trong hồ sơ"
-          >
-            <AddressAutocomplete
-              value={addressText}
-              onSelectSuggestion={applySuggestion}
-              onValidityChange={handleAddressValidity}
-              disabled={busy}
-            />
-          </Field>
+          <Card tone="brand" padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)', borderColor: 'var(--border-subtle)' }}>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <strong style={{ fontSize: 'var(--fs-body)' }}>Nơi làm việc</strong>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                Điền sẵn từ hồ sơ của bạn. Sửa ở đây chỉ áp dụng cho việc này.
+              </span>
+            </div>
+
+            {savedAddresses.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="tc-label">Địa chỉ đã lưu</div>
+                <div className="flex gap-2 flex-wrap">
+                  {savedAddresses.map((address) => (
+                    <div key={address.id} style={{ position: 'relative' }}>
+                      <Chip selected={selectedSavedAddressId === address.id} onClick={() => applySavedAddress(address)}>
+                        {address.label}
+                      </Chip>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); void handleDeleteSavedAddress(address.id) }}
+                        aria-label={`Xoá địa chỉ ${address.label}`}
+                        style={{
+                          position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 'var(--r-pill)',
+                          background: 'var(--surface-card)', border: 'var(--bw) solid var(--border)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+                        }}
+                      >
+                        <Icon name="x" size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Field
+              label="Địa điểm"
+              required
+              error={errors.addressText}
+              hint="Gõ để tìm và chọn từ danh sách gợi ý, hoặc chọn vị trí trên bản đồ bên phải"
+            >
+              <AddressAutocomplete
+                value={addressText}
+                onSelectSuggestion={applySuggestion}
+                onValidityChange={handleAddressValidity}
+                disabled={busy}
+              />
+            </Field>
+
+            <Field label="Loại địa điểm">
+              <Select
+                value={locationType}
+                onChange={(e) => setLocationType(e.target.value as LocationType | '')}
+                disabled={busy}
+                options={[{ value: '', label: 'Chưa chọn' }, ...LOCATION_TYPE_OPTIONS]}
+              />
+            </Field>
+
+            <Field label="Lưu ý khi tới nơi" hint="Gửi kèm tin đăng để người nhận việc biết trước.">
+              <Input
+                value={arrivalNotes}
+                maxLength={500}
+                onChange={(e) => setArrivalNotes(e.target.value)}
+                disabled={busy}
+              />
+            </Field>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {!showSaveAddressForm
+                ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="bookmark-plus"
+                      disabled={!addressText.trim() || !locationLat.trim() || !locationLng.trim()}
+                      onClick={() => setShowSaveAddressForm(true)}
+                    >
+                      Lưu địa chỉ này để dùng lại
+                    </Button>
+                  )
+                : (
+                    <>
+                      <Input
+                        placeholder="Tên gợi nhớ, vd Nhà, Công ty"
+                        value={newAddressLabel}
+                        onChange={(e) => setNewAddressLabel(e.target.value)}
+                        maxLength={100}
+                        disabled={savingAddress}
+                        error={!!savedAddressError}
+                        style={{ maxWidth: 220 }}
+                      />
+                      <Button variant="primary" size="sm" icon="check" disabled={savingAddress} onClick={() => void handleSaveCurrentAddress()}>
+                        {savingAddress ? 'Đang lưu…' : 'Lưu'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={savingAddress}
+                        onClick={() => { setShowSaveAddressForm(false); setNewAddressLabel(''); setSavedAddressError('') }}
+                      >
+                        Huỷ
+                      </Button>
+                    </>
+                  )}
+            </div>
+            {savedAddressError && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--danger)' }}>{savedAddressError}</span>}
+          </Card>
 
           <Field label="Ngân sách" hint="Không bắt buộc — để trống hiển thị 'thoả thuận'" error={errors.budgetAmount} style={{ maxWidth: 280 }}>
             <Input
@@ -458,15 +659,27 @@ export function PostTaskPage() {
 
           <Button
             size="lg" icon="file-plus-2"
-            disabled={busy || uploadingCount > 0 || !understandsEscrow}
+            disabled={busy || uploadingCount > 0 || !understandsEscrow || phoneVerified !== true}
             onClick={() => void handleSubmit()}
             style={{ alignSelf: 'flex-start' }}
           >
             {busy ? 'Đang đăng…' : 'Đăng việc'}
           </Button>
         </Card>
+        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)', position: 'sticky', top: 'var(--sp-5)' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--sp-5)',
+            position: 'sticky',
+            top: 'var(--sp-5)',
+            maxHeight: 'calc(100vh - var(--sp-5) * 2)',
+            overflowY: 'auto',
+            paddingRight: 'var(--sp-2)',
+          }}
+        >
           {(() => {
             const budgetNumber = budget.trim() ? Number(budget) : 0
             if (budgetNumber <= 0) {
@@ -505,7 +718,7 @@ export function PostTaskPage() {
             <div className="flex items-center justify-between gap-2">
               <div className="tc-label">Chọn vị trí trên bản đồ</div>
               <Button variant="ghost" size="sm" icon="locate-fixed" onClick={handleUseCurrentLocation} disabled={busy}>
-                Vị trí hiện tại
+                Dùng vị trí hiện tại
               </Button>
             </div>
             <LocationPickerMap
@@ -515,7 +728,7 @@ export function PostTaskPage() {
               onPick={(pickedLat, pickedLng) => void applyPickedLocation(pickedLat, pickedLng)}
             />
             <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
-              Bấm vào bản đồ hoặc kéo ghim để chọn vị trí — hệ thống tự điền "Địa chỉ", bạn sửa lại được nếu chưa đúng.
+              Bấm vào bản đồ hoặc kéo ghim để chọn vị trí — hệ thống tự điền "Địa điểm", bạn sửa lại được nếu chưa đúng.
             </p>
             {geocoding && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Đang tra địa chỉ từ toạ độ…</span>}
             {geocodeError && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--danger)' }}>{geocodeError}</span>}
