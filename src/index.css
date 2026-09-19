@@ -26,6 +26,24 @@
   }
 }
 
+/* Tung dong trang thai xuat hien 1 LAN khi den luot (SuggestionsLoading.tsx, man "Tasker goi
+   y") - CO CHU DICH khong dung animation-iteration-count: infinite: 20-design-system.md quy
+   dinh ro "khong lap vo han, khong troi noi" cho moi chuyen dong ngoai hover/scroll-reveal.
+   Cam giac "dang xu ly" den tu React tu lich hien lan luot tung dong that (setTimeout, xem
+   component), khong phai tu CSS loop - moi dong chi chay dung 1 lan animation nay roi dung o
+   trang thai cuoi (animation-fill-mode: both). Cung duong cong voi scroll-reveal (opacity +
+   translateY(10px), dur-slow, ease-out) de nhat quan chuyen dong toan he thong. */
+@keyframes tc-stage-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Hover + press cho nut "Ve trang chu" (AuthLayout.tsx) va logo bam duoc (AuthLayout.tsx,
    AppShell.tsx) - bat buoc theo 20-design-system.md ("Moi phan tu bam duoc phai co phan hoi
    hover ro rang"), khong lam duoc qua inline style cua React vi :hover/:active la
@@ -57,4 +75,34 @@
 }
 .tc-underline-hover:hover {
   text-decoration: underline;
+}
+
+/* Bo cuc 2 cot cua man "Tasker goi y" (SuggestedTaskersPanel.tsx) - noi dung chinh + rail
+   "Viec dang moi" dinh (sticky) rong 360px, phong theo man demo "TASKER GỢI Ý & MỜI" nguoi
+   dung cung cap. Sap thanh 1 cot tren man hinh hep (rail xuong duoi noi dung chinh) vi 360px
+   co dinh se bop noi dung chinh qua nho tren mobile - dung CSS thuan vi media query khong lam
+   duoc qua inline style cua React. */
+.tc-suggested-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: start;
+}
+@media (min-width: 960px) {
+  .tc-suggested-layout {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+}
+
+/* Luoi 2 cot cho cac the goi y gon (CompactTaskerCard) trong cot noi dung chinh o tren - dat
+   nguong hep hon .tc-suggested-layout vi cot nay hep hon toan bo trang (da tru rail 360px). */
+.tc-suggested-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-4);
+}
+@media (min-width: 560px) {
+  .tc-suggested-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }

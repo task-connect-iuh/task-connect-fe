@@ -32,7 +32,10 @@ const OVERVIEW_NAV: NavItem[] = [
 const POSTER_ONLY_NAV: NavItem[] = [
   { value: 'post', label: 'Đăng việc', icon: 'file-plus-2', to: '/dang-viec' },
   { value: 'jobs', label: 'Việc của tôi', icon: 'clipboard-list', to: '/viec-cua-toi' },
-  { value: 'matches', label: 'Tasker gợi ý', icon: 'radar' },
+  // Da noi route that (SuggestedTaskersPage.tsx) - truoc day khong co `to` nen hien "Sap ra
+  // mat" (span, bam khong di dau), da lam nguoi dung tuong tab nay chua lam. Xem
+  // PROGRESS-AI-MATCHING-MODULE.md.
+  { value: 'matches', label: 'Tasker gợi ý', icon: 'radar', to: '/goi-y-tasker' },
 ]
 
 const REST_NAV: NavItem[] = [

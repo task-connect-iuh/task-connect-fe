@@ -7,6 +7,7 @@ import { Card } from '@ds/components/core/Card'
 import { Checkbox } from '@ds/components/forms/Checkbox'
 import { Chip } from '@ds/components/core/Chip'
 import { DataRow } from '@ds/components/marketplace/DataRow'
+import { Dialog } from '@ds/components/feedback/Dialog'
 import { Field } from '@ds/components/forms/Field'
 import { Icon } from '@ds/components/core/Icon'
 import { Input } from '@ds/components/forms/Input'
@@ -15,6 +16,7 @@ import { Select } from '@ds/components/forms/Select'
 import { Textarea } from '@ds/components/forms/Textarea'
 import { AppShell } from '../components/AppShell.tsx'
 import { AddressAutocomplete } from '../components/AddressAutocomplete.tsx'
+import { DialogViewport } from '../components/DialogViewport.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
 import { TimeSelect } from '../components/TimeSelect.tsx'
@@ -92,6 +94,9 @@ export function PostTaskPage() {
   const navigate = useNavigate()
   const [categories, setCategories] = useState<ServiceCategoryResponse[] | null>(null)
   const [categoriesError, setCategoriesError] = useState('')
+  // Id cong viec vua tao xong, dung de hien dialog hoi "xem Tasker gợi ý ngay khong" truoc khi
+  // dieu huong di - null nghia la chua dang xong (form van dang hien), khong lien quan errors.
+  const [createdTaskId, setCreatedTaskId] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -354,7 +359,7 @@ export function PostTaskPage() {
     setFormError('')
     setBusy(true)
     try {
-      await createTask({
+      const created = await createTask({
         categoryId,
         title: title.trim(),
         description: description.trim(),
@@ -369,7 +374,9 @@ export function PostTaskPage() {
         imageUrls: images.map((img) => img.publicUrl).filter((url): url is string => !!url),
       })
       useToastStore.getState().pushToast('success', 'Đăng việc thành công.')
-      navigate('/viec-cua-toi')
+      // Hoi Poster co muon xem Tasker gợi ý ngay khong (yeu cau nguoi dung) thay vi tu dong
+      // dieu huong thang ve /viec-cua-toi - dialog hien qua createdTaskId, xem JSX cuoi file.
+      setCreatedTaskId(created.id)
     } catch (error) {
       const fieldErrors = error instanceof ApiError && error.details && typeof error.details === 'object'
         ? error.details as Record<string, string>
@@ -754,6 +761,32 @@ export function PostTaskPage() {
           onPrev={lightbox.prev}
           onGoTo={lightbox.goTo}
         />
+      )}
+
+      {createdTaskId && (
+        <DialogViewport>
+          <Dialog
+            title="Đăng việc thành công"
+            subtitle="Bạn có muốn xem ngay danh sách Tasker được AI gợi ý cho việc này không?"
+            onClose={() => navigate('/viec-cua-toi')}
+            style={{ maxWidth: 480 }}
+          >
+            <div className="flex flex-col gap-4">
+              <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                AI đã có thể xếp hạng sẵn những Tasker phù hợp nhất (khoảng cách, giá, lịch rảnh)
+                cho việc bạn vừa đăng — bạn có thể mời trực tiếp thay vì chờ Tasker tự ứng tuyển.
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <Button icon="sparkles" onClick={() => navigate(`/goi-y-tasker/${createdTaskId}`)}>
+                  Xem Tasker gợi ý ngay
+                </Button>
+                <Button variant="secondary" onClick={() => navigate('/viec-cua-toi')}>
+                  Để sau, về Việc của tôi
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+        </DialogViewport>
       )}
     </AppShell>
   )
