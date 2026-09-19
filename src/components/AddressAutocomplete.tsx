@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Textarea } from '@ds/components/forms/Textarea'
-import { searchAddress } from '../utils/geocoding.ts'
-import type { AddressSuggestion } from '../utils/geocoding.ts'
+import { resolveSuggestion, searchAddress } from '../utils/geocoding.ts'
+import type { AddressSuggestion, ResolvedAddress } from '../utils/geocoding.ts'
 
 const MIN_QUERY_LENGTH = 3
 const DEBOUNCE_MS = 350
@@ -10,7 +10,9 @@ interface AddressAutocompleteProps {
   /** Dia chi da chon/luu that su - component chi hien gia tri nay khi khong dang go, khong
    *  bao gio tu y ghi de bang van ban dang go dang o (xem "chi cho chon tu dropdown" duoi day). */
   value: string
-  onSelectSuggestion: (suggestion: AddressSuggestion) => void
+  /** Bao ra khi da phan giai xong toa do that su cua goi y vua chon (xem resolveSuggestion -
+   *  VietMap Autocomplete v4 khong tra toa do truc tiep, phai goi Place v4 rieng). */
+  onSelectSuggestion: (resolved: ResolvedAddress) => void
   /** Bao ra ngoai khi o dang o trang thai "khong the luu duoc" (tim khong ra goi y nao cho
    *  van ban dang go) - cha component (ProfilePage) dung de chan nut "Luu thay doi" va hien
    *  loi o Field, xem ly do trong Javadoc component ben duoi. */
@@ -53,6 +55,9 @@ export function AddressAutocomplete({ value, onSelectSuggestion, onValidityChang
   // "reverted": truong hop nay chan Luu va giu nguyen van ban loi de nguoi dung thay ro con
   // sai o dau, khong am tham tra lai gia tri cu.
   const [invalid, setInvalid] = useState(false)
+  // Dang goi Place v4 de lay toa do that su cua goi y vua chon (xem handleSelect) - khac
+  // "loading" (dang autocomplete), block chon them dong khac giua luc dang phan giai.
+  const [resolving, setResolving] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -143,13 +148,20 @@ export function AddressAutocomplete({ value, onSelectSuggestion, onValidityChang
   }
 
   const handleSelect = (suggestion: AddressSuggestion) => {
-    onSelectSuggestion(suggestion)
-    setQuery(suggestion.addressText)
     setOpen(false)
-    setSuggestions([])
-    setEditing(false)
-    setReverted(false)
-    setInvalid(false)
+    setResolving(true)
+    setError('')
+    resolveSuggestion(suggestion)
+      .then((resolved) => {
+        onSelectSuggestion(resolved)
+        setQuery(resolved.addressText)
+        setSuggestions([])
+        setEditing(false)
+        setReverted(false)
+        setInvalid(false)
+      })
+      .catch(() => setError('Không lấy được toạ độ của địa chỉ này, thử lại.'))
+      .finally(() => setResolving(false))
   }
 
   const handleBlur = () => {
@@ -174,7 +186,7 @@ export function AddressAutocomplete({ value, onSelectSuggestion, onValidityChang
         onChange={(e) => handleChange(e.target.value)}
         onBlur={handleBlur}
         placeholder="Gõ để tìm địa chỉ…"
-        disabled={disabled}
+        disabled={disabled || resolving}
       />
       {invalid && (
         <span style={{ display: 'block', marginTop: 'var(--sp-1)', fontSize: 'var(--fs-xs)', color: 'var(--danger)' }}>
@@ -191,7 +203,12 @@ export function AddressAutocomplete({ value, onSelectSuggestion, onValidityChang
           Đang tìm địa chỉ…
         </span>
       )}
-      {!loading && error && (
+      {resolving && (
+        <span style={{ display: 'block', marginTop: 'var(--sp-1)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+          Đang xác nhận toạ độ…
+        </span>
+      )}
+      {!loading && !resolving && error && (
         <span style={{ display: 'block', marginTop: 'var(--sp-1)', fontSize: 'var(--fs-xs)', color: 'var(--danger)' }}>
           {error}
         </span>
@@ -215,7 +232,7 @@ export function AddressAutocomplete({ value, onSelectSuggestion, onValidityChang
         >
           {suggestions.map((suggestion, index) => (
             <button
-              key={`${suggestion.lat}-${suggestion.lng}-${index}`}
+              key={suggestion.refId}
               type="button"
               onClick={() => handleSelect(suggestion)}
               onMouseDown={(e) => e.preventDefault()}

@@ -25,7 +25,7 @@ import { addSavedAddress, deleteSavedAddress, getMyProfile, getMySavedAddresses,
 import type { LocationType, SavedAddressResponse, ServiceCategoryResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
-import type { AddressSuggestion } from '../utils/geocoding.ts'
+import type { ResolvedAddress } from '../utils/geocoding.ts'
 import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
@@ -215,7 +215,7 @@ export function PostTaskPage() {
   }
 
   /** Ap dung 1 goi y duoc chon tu dropdown autocomplete o o Dia chi - cung logic ProfilePage.tsx. */
-  const applySuggestion = (suggestion: AddressSuggestion) => {
+  const applySuggestion = (suggestion: ResolvedAddress) => {
     setGeocodeError('')
     setLocationLat(suggestion.lat.toFixed(6))
     setLocationLng(suggestion.lng.toFixed(6))

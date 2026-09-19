@@ -131,6 +131,8 @@ export interface MyApplicationResponse {
   taskId: string
   taskTitle: string
   taskAddressText: string
+  taskLat: number
+  taskLng: number
   taskBudgetAmount: number | null
   taskScheduledAt: string | null
   taskStatus: TaskStatus
