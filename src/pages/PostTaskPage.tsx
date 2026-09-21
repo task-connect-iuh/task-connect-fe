@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
-import { AISuggestion } from '@ds/components/marketplace/AISuggestion'
 import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
 import { Checkbox } from '@ds/components/forms/Checkbox'
@@ -25,7 +24,7 @@ import { addSavedAddress, deleteSavedAddress, getMyProfile, getMySavedAddresses,
 import type { LocationType, SavedAddressResponse, ServiceCategoryResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
-import type { AddressSuggestion } from '../utils/geocoding.ts'
+import type { ResolvedAddress } from '../utils/geocoding.ts'
 import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
@@ -215,7 +214,7 @@ export function PostTaskPage() {
   }
 
   /** Ap dung 1 goi y duoc chon tu dropdown autocomplete o o Dia chi - cung logic ProfilePage.tsx. */
-  const applySuggestion = (suggestion: AddressSuggestion) => {
+  const applySuggestion = (suggestion: ResolvedAddress) => {
     setGeocodeError('')
     setLocationLat(suggestion.lat.toFixed(6))
     setLocationLng(suggestion.lng.toFixed(6))
@@ -430,15 +429,6 @@ export function PostTaskPage() {
               error={!!errors.description}
             />
           </Field>
-
-          <AISuggestion
-            label="Gợi ý từ AI"
-            value="Sửa chữa điện nước · 400.000 – 600.000 ₫"
-            confidence={82}
-          >
-            Minh hoạ giao diện — tính năng tự gợi ý danh mục và khoảng giá từ mô tả sẽ được bổ
-            sung khi module AI hoàn thành. Hiện tại bạn tự chọn danh mục và ngân sách bên dưới.
-          </AISuggestion>
 
           <Field label="Nhóm dịch vụ" required error={errors.categoryId}>
             <Select
@@ -714,12 +704,6 @@ export function PostTaskPage() {
               </Card>
             )
           })()}
-
-          <Alert tone="info" title="Gợi ý AI hoạt động thế nào">
-            Mô hình sẽ đọc mô tả của bạn để đoán danh mục và khoảng giá thị trường. Nó không tự đăng
-            việc, không tự chọn Tasker, và không đàm phán giá. Khối minh hoạ ở trên là giao diện xem
-            trước, module AI thật sẽ được bổ sung ở giai đoạn sau.
-          </Alert>
 
           <Card padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
             <div className="flex items-center justify-between gap-2">

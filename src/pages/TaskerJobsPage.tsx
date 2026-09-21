@@ -10,6 +10,7 @@ import { Icon } from '@ds/components/core/Icon'
 import { MoneyAmount } from '@ds/components/marketplace/MoneyAmount'
 import { Tabs } from '@ds/components/navigation/Tabs'
 import { AppShell } from '../components/AppShell.tsx'
+import { DirectionsModal } from '../components/DirectionsModal.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { getMyApplications } from '../api/tasks.ts'
 import type { MyApplicationResponse, TaskApplicationStatus } from '../api/tasks.ts'
@@ -79,6 +80,7 @@ interface ApplicationRowProps {
 /** Mot dong viec da ung tuyen/da nhan - phong theo bo cuc TaskRow cua MyTasksPage.tsx (Poster) de dong bo giao dien giua 2 vai tro. */
 function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
   const navigate = useNavigate()
+  const [showDirections, setShowDirections] = useState(false)
   return (
     <Card padding="var(--sp-4) var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
       <div className="flex gap-4 items-start">
@@ -132,10 +134,7 @@ function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
           <>
             <Button variant="secondary" size="sm" icon="message-square" disabled title="Nhắn tin sẽ có khi module Chat hoàn thành">Nhắn tin</Button>
             <Button size="sm" icon="badge-check" disabled title="Báo hoàn tất sẽ có khi module Booking hoàn thành">Báo hoàn tất</Button>
-            <Button
-              variant="ghost" size="sm" icon="navigation"
-              onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(application.taskAddressText)}`, '_blank', 'noopener,noreferrer')}
-            >
+            <Button variant="ghost" size="sm" icon="navigation" onClick={() => setShowDirections(true)}>
               Chỉ đường
             </Button>
           </>
@@ -148,6 +147,12 @@ function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
           <Button variant="ghost" size="sm" icon="receipt-text" disabled title="Ví chưa khả dụng">Xem giao dịch</Button>
         )}
       </div>
+      {showDirections && (
+        <DirectionsModal
+          destination={{ lat: application.taskLat, lng: application.taskLng, addressText: application.taskAddressText }}
+          onClose={() => setShowDirections(false)}
+        />
+      )}
     </Card>
   )
 }
