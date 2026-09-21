@@ -13,8 +13,11 @@ import { AppShell } from '../components/AppShell.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { getMyApplications } from '../api/tasks.ts'
 import type { MyApplicationResponse, TaskApplicationStatus } from '../api/tasks.ts'
+import { acceptInvite, declineInvite, getMyInvites } from '../api/matching.ts'
+import type { MyInviteResponse, TaskerInviteStatus } from '../api/matching.ts'
 import { ApiError } from '../api/client.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 
 // Nhan/tone rieng cho TaskApplicationStatus - KHONG dung vocabulary cua StatusPill (component
 // do chi danh cho trang thai booking/thanh toan, xem 01-domain-glossary.md), cung nguyen tac
@@ -149,6 +152,97 @@ function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
   )
 }
 
+// Nhan/tone rieng cho TaskerInviteStatus - loi moi Poster chu dong gui (UC09 mo rong, xem
+// api/matching.ts), doc lap voi TaskApplicationStatus (Tasker tu ung tuyen) o tren.
+const INVITE_STATUS_LABEL: Record<TaskerInviteStatus, string> = {
+  PENDING: 'Chờ bạn phản hồi',
+  ACCEPTED: 'Đã nhận lời mời',
+  DECLINED: 'Đã từ chối',
+  EXPIRED: 'Đã hết hạn',
+}
+const INVITE_STATUS_TONE: Record<TaskerInviteStatus, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
+  PENDING: 'info',
+  ACCEPTED: 'success',
+  DECLINED: 'neutral',
+  EXPIRED: 'neutral',
+}
+
+interface InvitesPanelProps {
+  invites: MyInviteResponse[]
+  onResponded: () => void
+}
+
+/**
+ * Loi moi Poster chu dong gui cho Tasker (UC09 mo rong - AI goi y Tasker, Poster bam "Mời làm
+ * việc này" o SuggestedTaskersPanel), doc lap hoan toan voi luong Tasker tu ung tuyen
+ * (ApplicationRow/getMyApplications o tren). Chi hien nut Chap nhan/Tu choi khi con PENDING -
+ * cac trang thai khac chi hien Badge de xem lai. Khong render gi khi danh sach rong, tranh
+ * chiem cho tren trang khi Tasker chua tung duoc moi lan nao.
+ */
+function InvitesPanel({ invites, onResponded }: InvitesPanelProps) {
+  const [processingId, setProcessingId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState('')
+
+  const handleAccept = (invite: MyInviteResponse) => {
+    setProcessingId(invite.inviteId)
+    acceptInvite(invite.taskId, invite.inviteId)
+      .then(() => {
+        useToastStore.getState().pushToast('success', `Đã nhận lời mời cho việc "${invite.taskTitle}".`)
+        onResponded()
+      })
+      .catch((error) => setActionError(error instanceof ApiError ? error.message : 'Chấp nhận lời mời thất bại, thử lại sau.'))
+      .finally(() => setProcessingId(null))
+  }
+
+  const handleDecline = (invite: MyInviteResponse) => {
+    setProcessingId(invite.inviteId)
+    declineInvite(invite.taskId, invite.inviteId)
+      .then(() => {
+        useToastStore.getState().pushToast('success', 'Đã từ chối lời mời này.')
+        onResponded()
+      })
+      .catch((error) => setActionError(error instanceof ApiError ? error.message : 'Từ chối lời mời thất bại, thử lại sau.'))
+      .finally(() => setProcessingId(null))
+  }
+
+  if (invites.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="tc-label">Lời mời từ người đăng việc</div>
+      {actionError && <Alert tone="danger" title="Thao tác thất bại">{actionError}</Alert>}
+      {invites.map((invite) => (
+        <Card key={invite.inviteId} padding="var(--sp-4) var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+          <div className="flex items-start gap-3">
+            <div className="flex-1" style={{ minWidth: 0 }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge tone="brand">{invite.categoryName}</Badge>
+                <Badge tone={INVITE_STATUS_TONE[invite.status]}>{INVITE_STATUS_LABEL[invite.status]}</Badge>
+              </div>
+              <strong style={{ display: 'block', marginTop: 6, fontSize: 'var(--fs-body)' }}>{invite.taskTitle}</strong>
+              <div className="flex flex-wrap gap-4" style={{ marginTop: 6, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                <span className="flex items-center gap-1"><Icon name="user" size={15} />{invite.posterName ?? 'Người đăng việc'}</span>
+                <span className="flex items-center gap-1"><Icon name="map-pin" size={15} />{invite.taskAddressText}</span>
+              </div>
+            </div>
+            {invite.taskBudgetAmount != null && <MoneyAmount value={invite.taskBudgetAmount} size="sm" label="Ngân sách" />}
+          </div>
+          {invite.status === 'PENDING' && (
+            <div className="flex gap-2" style={{ marginTop: 'var(--sp-1)' }}>
+              <Button size="sm" icon="check" disabled={processingId != null} onClick={() => handleAccept(invite)}>
+                {processingId === invite.inviteId ? 'Đang xử lý…' : 'Chấp nhận'}
+              </Button>
+              <Button variant="secondary" size="sm" icon="x" disabled={processingId != null} onClick={() => handleDecline(invite)}>
+                Từ chối
+              </Button>
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 type JobTab = 'accepted' | 'waiting' | 'all'
 
 /**
@@ -163,6 +257,7 @@ type JobTab = 'accepted' | 'waiting' | 'all'
 export function TaskerJobsPage() {
   const navigate = useNavigate()
   const [applications, setApplications] = useState<MyApplicationResponse[] | null>(null)
+  const [invites, setInvites] = useState<MyInviteResponse[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [tab, setTab] = useState<JobTab>('accepted')
   const rowLightbox = useImageLightbox()
@@ -172,6 +267,13 @@ export function TaskerJobsPage() {
       .then(setApplications)
       .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Không tải được danh sách việc đã ứng tuyển.'))
   }, [])
+
+  const refreshInvites = () => {
+    getMyInvites()
+      .then(setInvites)
+      .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Không tải được danh sách lời mời.'))
+  }
+  useEffect(refreshInvites, [])
 
   const accepted = useMemo(() => (applications ?? []).filter((a) => a.status === 'ACCEPTED'), [applications])
   const waiting = useMemo(
@@ -230,6 +332,8 @@ export function TaskerJobsPage() {
               hiện tại hãy liên hệ trực tiếp người đăng việc để sắp xếp lại.
             </Alert>
           ))}
+
+          {invites != null && <InvitesPanel invites={invites} onResponded={refreshInvites} />}
 
           <Tabs
             value={tab}
