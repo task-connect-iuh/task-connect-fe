@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
-import { AISuggestion } from '@ds/components/marketplace/AISuggestion'
 import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
 import { Checkbox } from '@ds/components/forms/Checkbox'
@@ -431,15 +430,6 @@ export function PostTaskPage() {
             />
           </Field>
 
-          <AISuggestion
-            label="Gợi ý từ AI"
-            value="Sửa chữa điện nước · 400.000 – 600.000 ₫"
-            confidence={82}
-          >
-            Minh hoạ giao diện — tính năng tự gợi ý danh mục và khoảng giá từ mô tả sẽ được bổ
-            sung khi module AI hoàn thành. Hiện tại bạn tự chọn danh mục và ngân sách bên dưới.
-          </AISuggestion>
-
           <Field label="Nhóm dịch vụ" required error={errors.categoryId}>
             <Select
               value={categoryId}
@@ -714,12 +704,6 @@ export function PostTaskPage() {
               </Card>
             )
           })()}
-
-          <Alert tone="info" title="Gợi ý AI hoạt động thế nào">
-            Mô hình sẽ đọc mô tả của bạn để đoán danh mục và khoảng giá thị trường. Nó không tự đăng
-            việc, không tự chọn Tasker, và không đàm phán giá. Khối minh hoạ ở trên là giao diện xem
-            trước, module AI thật sẽ được bổ sung ở giai đoạn sau.
-          </Alert>
 
           <Card padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
             <div className="flex items-center justify-between gap-2">
