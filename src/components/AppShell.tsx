@@ -36,7 +36,7 @@ const POSTER_ONLY_NAV: NavItem[] = [
 ]
 
 const REST_NAV: NavItem[] = [
-  { value: 'chat', label: 'Tin nhắn', icon: 'message-square' },
+  { value: 'chat', label: 'Tin nhắn', icon: 'message-square', to: '/tin-nhan' },
   { value: 'profile', label: 'Hồ sơ', icon: 'user-round', to: '/ho-so' },
 ]
 
@@ -65,6 +65,13 @@ interface AppShellProps {
   subtitle?: string
   actions?: ReactNode
   children: ReactNode
+  /**
+   * Cho phep thu gon/mo lai toan bo thanh tren (logo, nav, page header) bang 1 nut chevron -
+   * chi bat o man can toi da chieu cao doc cho noi dung ben duoi (vd khung chat o InboxPage.tsx).
+   * Mac dinh false/khong truyen: khong hien nut, hanh vi y het truoc day, khong doi gi cho cac
+   * man khac.
+   */
+  collapsibleHeader?: boolean
 }
 
 /**
@@ -74,8 +81,11 @@ interface AppShellProps {
  * chi la tham khao bo cuc cho ban demo standalone, dung bien global window.*, khong phai
  * module ES that). Xem 20-design-system.md "Khung bo cuc chuan".
  */
-export function AppShell({ navValue, title, subtitle, actions, children }: AppShellProps) {
+export function AppShell({ navValue, title, subtitle, actions, children, collapsibleHeader }: AppShellProps) {
   const navigate = useNavigate()
+  // Chi co y nghia khi collapsibleHeader=true (nut chevron chi hien luc do) - cac man khac
+  // khong truyen prop nay nen bien nay luon false, khong anh huong gi.
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
   const activeRole = useAuthStore((state) => state.activeRole)
   const setActiveRole = useAuthStore((state) => state.setActiveRole)
   const roleSwitcherValue = activeRole === 'tasker' ? 'tasker' : 'poster'
@@ -130,8 +140,12 @@ export function AppShell({ navValue, title, subtitle, actions, children }: AppSh
     navigate('/dang-nhap', { replace: true })
   }
 
+  const showHeader = !collapsibleHeader || !headerCollapsed
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-app)' }}>
+      {showHeader && (
+      <>
       <div style={{ background: 'var(--teal-900)' }}>
         <div className="max-w-container mx-auto flex items-center gap-4 px-4 md:px-8" style={{ minHeight: 96 }}>
           <Link to="/tong-quan" className="tc-logo-link">
@@ -226,8 +240,29 @@ export function AppShell({ navValue, title, subtitle, actions, children }: AppSh
           {actions}
         </div>
       </header>
+      </>
+      )}
 
-      <div className="max-w-container mx-auto w-full px-4 md:px-8 py-8" style={{ boxSizing: 'border-box' }}>
+      {collapsibleHeader && (
+        <div
+          className="flex items-center justify-center"
+          style={{ padding: 'var(--sp-1) 0' }}
+        >
+          <IconButton
+            icon={headerCollapsed ? 'chevron-down' : 'chevron-up'}
+            label={headerCollapsed ? 'Mở lại thanh điều hướng' : 'Thu gọn thanh điều hướng'}
+            size="sm"
+            variant="outline"
+            style={{ borderRadius: 'var(--r-pill)', width: 28, height: 28 }}
+            onClick={() => setHeaderCollapsed((collapsed) => !collapsed)}
+          />
+        </div>
+      )}
+
+      <div
+        className={`max-w-container mx-auto w-full px-4 md:px-8 pb-8 ${collapsibleHeader ? 'pt-4' : 'py-8'}`}
+        style={{ boxSizing: 'border-box' }}
+      >
         {children}
       </div>
     </div>

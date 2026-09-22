@@ -6,6 +6,7 @@ import { Button } from '@ds/components/core/Button'
 import { Field } from '@ds/components/forms/Field'
 import { Input } from '@ds/components/forms/Input'
 import { ApiError } from '../../api/client.ts'
+import { checkPhoneAvailable } from '../../api/auth.ts'
 import { firebaseAuth } from './firebase.ts'
 
 const PHONE_PATTERN = /^0\d{9}$/
@@ -87,6 +88,12 @@ export function PhoneVerificationFlow({ initialPhone, onVerified, secondaryActio
     setOtpError('')
     setBusy(true)
     try {
+      // Kiem tra trung so TRUOC khi gui OTP - bao loi ngay o buoc nhap so thay vi doi den
+      // buoc xac minh OTP moi biet. Bo qua o che do lockPhone: dang xac minh lai chinh so
+      // HIEN TAI cua minh, khong can check trung (updatePhone() da loai tru chinh minh).
+      if (!lockPhone) {
+        await checkPhoneAvailable(trimmed)
+      }
       if (!recaptchaContainerRef.current) throw new Error('missing recaptcha container')
       // Tao verifier moi cho moi lan gui - tranh tai su dung mot widget da render/het han tu
       // lan truoc (vd nguoi dung bam "Sua lai" hoac "Gui lai ma" roi gui lai).

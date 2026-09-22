@@ -42,6 +42,12 @@ import { useLockBodyScroll } from '../utils/useLockBodyScroll.ts'
 
 const ALLOWED_CERTIFICATE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
 
+// Bien do gia tham khao Tasker duoc phep khai bao, don vi NGHIN dong (o nhap nhan don vi nghin
+// - go "50" nghia la 50.000 d). Nguong nghiep vu chot cung nguoi dung 2026-09-16: 50.000 d den
+// 10.000.000 d - khop @Min/@Max tren priceMin/priceMax ben BE (SubmitSkillRequest.java).
+const PRICE_MIN_THOUSAND = 50
+const PRICE_MAX_THOUSAND = 10_000
+
 // Icon Lucide theo ma nhom dich vu (user_service_categories.code, xem V4 seed) - chi de
 // trang tri cho de nhan dien tren the ky nang, khong mang y nghia nghiep vu.
 const CATEGORY_ICON: Record<string, string> = {
@@ -63,6 +69,16 @@ function tomorrowDateString() {
   const d = new Date()
   d.setDate(d.getDate() + 1)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Thong bao dung chung cho ca hai o gia khi so nhap ra ngoai bien do cho phep. */
+const PRICE_RANGE_MESSAGE = `Giá tham khảo phải từ ${(PRICE_MIN_THOUSAND * 1000).toLocaleString('vi-VN')} đ đến ${(PRICE_MAX_THOUSAND * 1000).toLocaleString('vi-VN')} đ.`
+
+/** Chuoi so nguoi dung nhap (don vi nghin dong) co nam trong bien do gia cho phep khong - chuoi rong coi nhu hop le vi gia tham khao khong bat buoc. */
+function isPriceInRange(digitsInThousand: string) {
+  const n = Number(digitsInThousand)
+  if (!digitsInThousand) return true
+  return !Number.isNaN(n) && n >= PRICE_MIN_THOUSAND && n <= PRICE_MAX_THOUSAND
 }
 
 /** Chuoi so nguyen nguoi dung nhap (don vi nghin dong) -> chuoi tien VND day du co dau cham ngan nghin, vd "222" -> "222.000 đ". Rong hoac khong phai so tra ve rong. */
@@ -185,7 +201,16 @@ function SkillForm({ category, existing, onDone, onCancel }: SkillFormProps) {
     const nextErrors: Record<string, string> = {}
     const years = Number(yearsExperience)
     if (!yearsExperience || Number.isNaN(years) || years < 0 || years > 60) nextErrors.yearsExperience = 'Nhập số năm kinh nghiệm hợp lệ (0-60).'
-    if (priceMin && priceMax && Number(priceMax) <= Number(priceMin)) nextErrors.priceMax = 'Giá tối đa phải lớn hơn giá tối thiểu.'
+    // Cap gia tham khao la "tat ca hoac khong co gi": bo trong ca hai van nop duoc, nhung da
+    // nhap mot dau thi phai nhap du ca hai (quyet dinh nguoi dung 2026-09-16). Bien do tung gia
+    // va thu tu min < max chi kiem khi co gia tri, khop BE (SubmitSkillRequest + requirePriceRange).
+    if (priceMin && !priceMax) nextErrors.priceMax = 'Đã nhập giá tối thiểu thì phải nhập cả giá tối đa.'
+    if (!priceMin && priceMax) nextErrors.priceMin = 'Đã nhập giá tối đa thì phải nhập cả giá tối thiểu.'
+    if (priceMin && !isPriceInRange(priceMin)) nextErrors.priceMin = PRICE_RANGE_MESSAGE
+    if (priceMax && !isPriceInRange(priceMax)) nextErrors.priceMax = PRICE_RANGE_MESSAGE
+    if (!nextErrors.priceMin && !nextErrors.priceMax && priceMin && priceMax && Number(priceMax) <= Number(priceMin)) {
+      nextErrors.priceMax = 'Giá tối đa phải lớn hơn giá tối thiểu.'
+    }
     if (!certificateTypeId) nextErrors.certificateTypeId = 'Chọn loại chứng chỉ.'
     if (!certificateNumber.trim()) nextErrors.certificateNumber = 'Nhập số hiệu chứng chỉ.'
     if (!issuingAuthority.trim()) nextErrors.issuingAuthority = 'Nhập nơi cấp.'
@@ -257,7 +282,7 @@ function SkillForm({ category, existing, onDone, onCancel }: SkillFormProps) {
         </Field>
         <Field
           label="Giá tối thiểu"
-          hint="Nhập theo đơn vị nghìn đồng, không bắt buộc — vd nhập 50 nghĩa là 50.000 đ"
+          hint="Nhập theo đơn vị nghìn đồng — vd nhập 50 nghĩa là 50.000 đ. Trong khoảng 50.000 đ – 10.000.000 đ"
           error={errors.priceMin}
           style={{ flex: 1, minWidth: 160 }}
         >
@@ -272,7 +297,7 @@ function SkillForm({ category, existing, onDone, onCancel }: SkillFormProps) {
         </Field>
         <Field
           label="Giá tối đa"
-          hint="Nhập theo đơn vị nghìn đồng, không bắt buộc — vd nhập 50 nghĩa là 50.000 đ"
+          hint="Để trống cả hai ô giá nếu chưa muốn công bố. Đã nhập một ô thì phải nhập cả hai"
           error={errors.priceMax}
           style={{ flex: 1, minWidth: 160 }}
         >

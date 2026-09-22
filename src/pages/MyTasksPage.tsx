@@ -18,6 +18,8 @@ import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { confirmApplication, getMyTasks, getTaskApplicants, rejectApplication } from '../api/tasks.ts'
 import type { TaskApplicationResponse, TaskResponse, TaskStatus } from '../api/tasks.ts'
 import { ApiError } from '../api/client.ts'
+import { LOCATION_TYPE_LABELS } from '../utils/locationType.ts'
+import { SUPPLIES_STATUS_LABELS } from '../utils/suppliesStatus.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useLockBodyScroll } from '../utils/useLockBodyScroll.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
@@ -79,18 +81,32 @@ function formatWeekdayTime(iso: string) {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${time}`
 }
 
-// Nhan/tone rieng cho trang thai don ung tuyen - cung nguyen tac voi TASK_STATUS_LABEL (khong dung vocabulary StatusPill).
+// Nhan/tone rieng cho trang thai don ung tuyen - cung nguyen tac voi TASK_STATUS_LABEL (khong
+// dung vocabulary StatusPill). Mo rong tu 4 len 10 gia tri o Round B0-B6 module Chat -
+// xem TaskApplicationStatus trong api/tasks.ts.
 const APPLICATION_STATUS_LABEL: Record<TaskApplicationResponse['status'], string> = {
   PENDING: 'Chờ bạn xác nhận',
   ACCEPTED: 'Đã xác nhận',
   NEEDS_RECONFIRM: 'Cần ứng tuyển lại',
   REJECTED: 'Đã từ chối',
+  INQUIRING: 'Đang hỏi thêm',
+  INVITED: 'Đã mời, chờ phản hồi',
+  WITHDRAWN: 'Đã rút ứng tuyển',
+  REJECTED_AUTO: 'Đã giao người khác',
+  DECLINED: 'Đã từ chối lời mời',
+  INVITE_EXPIRED: 'Lời mời đã hết hạn',
 }
 const APPLICATION_STATUS_TONE: Record<TaskApplicationResponse['status'], 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
   PENDING: 'info',
   ACCEPTED: 'success',
   NEEDS_RECONFIRM: 'warning',
   REJECTED: 'neutral',
+  INQUIRING: 'info',
+  INVITED: 'warning',
+  WITHDRAWN: 'neutral',
+  REJECTED_AUTO: 'neutral',
+  DECLINED: 'danger',
+  INVITE_EXPIRED: 'neutral',
 }
 
 interface ApplicantsPanelProps {
@@ -105,6 +121,7 @@ interface ApplicantsPanelProps {
  * onConfirmed() de MyTasksPage refetch danh sach cong viec (Task chuyen ASSIGNED) va dong dialog.
  */
 function ApplicantsPanel({ task, onConfirmed }: ApplicantsPanelProps) {
+  const navigate = useNavigate()
   const [applicants, setApplicants] = useState<TaskApplicationResponse[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -150,7 +167,7 @@ function ApplicantsPanel({ task, onConfirmed }: ApplicantsPanelProps) {
       {applicants?.map((applicant) => (
         <Card key={applicant.id} padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
           <div className="flex items-center gap-3">
-            <Avatar name={applicant.taskerName ?? 'Tasker'} size={36} />
+            <Avatar name={applicant.taskerName ?? 'Tasker'} src={applicant.taskerAvatarUrl ?? undefined} size={36} />
             <div className="flex-1">
               <strong style={{ fontSize: 'var(--fs-body)' }}>{applicant.taskerName ?? 'Tasker'}</strong>
             </div>
@@ -159,16 +176,29 @@ function ApplicantsPanel({ task, onConfirmed }: ApplicantsPanelProps) {
           {applicant.message && (
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-body)', lineHeight: 1.5 }}>{applicant.message}</p>
           )}
-          {applicant.status === 'PENDING' && task.status === 'OPEN' && (
-            <div className="flex gap-2" style={{ marginTop: 'var(--sp-1)' }}>
-              <Button size="sm" icon="check" disabled={processingId != null} onClick={() => handleConfirm(applicant.id)}>
-                {processingId === applicant.id ? 'Đang xử lý…' : 'Xác nhận'}
-              </Button>
-              <Button variant="secondary" size="sm" icon="x" disabled={processingId != null} onClick={() => handleReject(applicant.id)}>
-                Từ chối
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-2" style={{ marginTop: 'var(--sp-1)' }}>
+            {applicant.status === 'PENDING' && task.status === 'OPEN' && (
+              <>
+                <Button size="sm" icon="check" disabled={processingId != null} onClick={() => handleConfirm(applicant.id)}>
+                  {processingId === applicant.id ? 'Đang xử lý…' : 'Xác nhận'}
+                </Button>
+                <Button variant="secondary" size="sm" icon="x" disabled={processingId != null} onClick={() => handleReject(applicant.id)}>
+                  Từ chối
+                </Button>
+              </>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="message-square"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => navigate(`/tin-nhan/${applicant.id}`, {
+                state: { counterpartName: applicant.taskerName, counterpartAvatarUrl: applicant.taskerAvatarUrl },
+              })}
+            >
+              Nhắn tin
+            </Button>
+          </div>
         </Card>
       ))}
     </div>
@@ -181,8 +211,8 @@ interface TaskDetailDialogProps {
   onApplicantConfirmed: () => void
 }
 
-/** Xem chi tiet 1 cong viec da dang - dung lai du lieu da co san tu getMyTasks(), khong goi rieng GET /tasks/{id}. Anh chi hien khi bam nut "Xem ảnh" (khong hien san thumbnail) - mo ImageLightbox dang gallery, duyet qua lai bang next/prev, cham trang, hoac vuot trai/phai. Voi task OPEN/ASSIGNED, them ApplicantsPanel de Poster xem/xac nhan ung vien (UC11). */
-function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDetailDialogProps) {
+/** Xem chi tiet 1 cong viec da dang - dung lai du lieu da co san tu getMyTasks(), khong goi rieng GET /tasks/{id}. Anh chi hien khi bam nut "Xem ảnh" (khong hien san thumbnail) - mo ImageLightbox dang gallery, duyet qua lai bang next/prev, cham trang, hoac vuot trai/phai. Voi task OPEN/ASSIGNED, them ApplicantsPanel de Poster xem/xac nhan ung vien (UC11). Loai dia diem/luu y/tinh trang vat tu (2026-09-14) hien bang DataRow, an han khi null/rong (tru "Tinh trang vat tu" - luon bat buoc co gia tri). */
+export function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDetailDialogProps) {
   useLockBodyScroll(true)
   const lightbox = useImageLightbox()
   const step = lifecycleStepFor(task.status)
@@ -190,35 +220,41 @@ function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDetailDia
   return (
     <DialogViewport>
       <Dialog title={task.title} subtitle={task.categoryName} onClose={onClose} style={{ maxWidth: 640 }}>
-        <div className="flex flex-col gap-4">
-          <Badge tone={TASK_STATUS_TONE[task.status]}>{TASK_STATUS_LABEL[task.status]}</Badge>
+        <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 'var(--sp-1)' }}>
+          <div className="flex flex-col gap-4">
+            <Badge tone={TASK_STATUS_TONE[task.status]}>{TASK_STATUS_LABEL[task.status]}</Badge>
 
-          {step != null && (
-            <div style={{ overflowX: 'auto', padding: 'var(--sp-2) 0' }}>
-              <LifecycleTracker current={step} style={{ minWidth: 480 }} />
-            </div>
-          )}
+            {step != null && (
+              <div style={{ overflowX: 'auto', padding: 'var(--sp-2) 0' }}>
+                <LifecycleTracker current={step} style={{ minWidth: 480 }} />
+              </div>
+            )}
 
-          {task.imageUrls.length > 0 && (
-            <Button
-              variant="secondary" size="sm" icon="image"
-              onClick={() => lightbox.open(task.imageUrls, 0)}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              Xem ảnh ({task.imageUrls.length})
-            </Button>
-          )}
+            {task.imageUrls.length > 0 && (
+              <Button
+                variant="secondary" size="sm" icon="image"
+                onClick={() => lightbox.open(task.imageUrls, 0)}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                Xem ảnh ({task.imageUrls.length})
+              </Button>
+            )}
 
-          <p style={{ fontSize: 'var(--fs-body)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{task.description}</p>
+            <p style={{ fontSize: 'var(--fs-body)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{task.description}</p>
 
-          <DataRow label="Địa chỉ" value={task.addressText} />
-          <DataRow label="Ngân sách" value={formatBudget(task.budgetAmount)} numeric />
-          <DataRow label="Thời gian mong muốn" value={task.scheduledAt ? formatDateTime(task.scheduledAt) : 'Chưa xác định'} />
-          <DataRow label="Đăng lúc" value={formatDateTime(task.createdAt)} />
+            <DataRow label="Địa chỉ" value={task.addressText} />
+            {task.locationType && <DataRow label="Loại địa điểm" value={LOCATION_TYPE_LABELS[task.locationType]} />}
+            {task.arrivalNotes && <DataRow label="Lưu ý khi tới nơi" value={task.arrivalNotes} />}
+            <DataRow label="Tình trạng vật tư" value={SUPPLIES_STATUS_LABELS[task.suppliesStatus]} />
+            {task.suppliesNote && <DataRow label="Mô tả thêm về vật tư" value={task.suppliesNote} />}
+            <DataRow label="Ngân sách" value={formatBudget(task.budgetAmount)} numeric />
+            <DataRow label="Thời gian mong muốn" value={task.scheduledAt ? formatDateTime(task.scheduledAt) : 'Chưa xác định'} />
+            <DataRow label="Đăng lúc" value={formatDateTime(task.createdAt)} />
 
-          {(task.status === 'OPEN' || task.status === 'ASSIGNED') && (
-            <ApplicantsPanel task={task} onConfirmed={() => { onApplicantConfirmed(); onClose() }} />
-          )}
+            {(task.status === 'OPEN' || task.status === 'ASSIGNED') && (
+              <ApplicantsPanel task={task} onConfirmed={() => { onApplicantConfirmed(); onClose() }} />
+            )}
+          </div>
         </div>
       </Dialog>
 
@@ -252,6 +288,7 @@ interface TaskRowProps {
  * vi JobListRow.status dung vocabulary cua StatusPill (booking/thanh toan), khong khop
  * TaskStatus that cua module Task - xem comment o TASK_STATUS_LABEL. */
 function TaskRow({ task, onOpenDetail, onOpenGallery }: TaskRowProps) {
+  const navigate = useNavigate()
   const step = lifecycleStepFor(task.status)
 
   return (
@@ -301,6 +338,11 @@ function TaskRow({ task, onOpenDetail, onOpenGallery }: TaskRowProps) {
             <Icon name="image-off" size={15} />Không có ảnh
           </span>
         )}
+        {task.status === 'OPEN' && (
+          <Button variant="secondary" size="sm" icon="users" onClick={() => navigate(`/viec-cua-toi/${task.id}/ung-vien`)}>
+            Ứng viên & chốt giá
+          </Button>
+        )}
         <div style={{ marginLeft: 'auto' }}>
           <Button variant="secondary" size="sm" icon="eye" onClick={onOpenDetail}>Xem chi tiết</Button>
         </div>
@@ -309,12 +351,12 @@ function TaskRow({ task, onOpenDetail, onOpenGallery }: TaskRowProps) {
   )
 }
 
-type TaskTab = 'posted' | 'running' | 'done' | 'all'
+type TaskTab = 'needsAction' | 'running' | 'done' | 'all'
 
 /**
  * Viec cua toi (UC06 toi gian, phan xem) - tong quan + danh sach cong viec da dang cua
  * Poster, theo bo cuc tham khao poster/JobsScreen.jsx (Design System). 3 o thong ke + 4 tab
- * (Da dang/Dang chay/Da xong/Tat ca) va "Lich viec sap toi" deu la DU LIEU THAT, tu chinh
+ * (Can xu ly/Dang chay/Da xong/Tat ca) va "Lich viec sap toi" deu la DU LIEU THAT, tu chinh
  * GET /tasks/mine da co (khong can API moi - moi field can dung deu da co san trong
  * TaskResponse). "Tien cua ban trong tuan" va o thong ke "Thanh toan" la BAN XEM TRUOC GIAO
  * DIEN, chua co du lieu that vi module Payment chua ton tai - ghi ro trong UI, khong am tham
@@ -327,7 +369,7 @@ export function MyTasksPage() {
   const [tasks, setTasks] = useState<TaskResponse[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [detailTask, setDetailTask] = useState<TaskResponse | null>(null)
-  const [tab, setTab] = useState<TaskTab>('posted')
+  const [tab, setTab] = useState<TaskTab>('needsAction')
   const rowLightbox = useImageLightbox()
 
   const refresh = () => {
@@ -339,12 +381,15 @@ export function MyTasksPage() {
   useEffect(refresh, [])
 
   const openCount = tasks?.filter((t) => t.status === 'OPEN').length ?? 0
+  // Viec OPEN co it nhat 1 don PENDING - can Poster xac nhan/tu choi (khac openCount o tren,
+  // vi OPEN nhung chua ai ung tuyen thi khong "can xu ly" gi, chi con thay o tab "Tat ca").
+  const needsActionCount = tasks?.filter((t) => t.status === 'OPEN' && t.pendingApplicantCount > 0).length ?? 0
   const runningCount = tasks?.filter((t) => t.status === 'ASSIGNED').length ?? 0
   const doneCount = tasks?.filter((t) => t.status === 'COMPLETED' || t.status === 'CLOSED').length ?? 0
   const allCount = tasks?.length ?? 0
 
   const TABS = [
-    { value: 'posted', label: 'Đã đăng', count: openCount },
+    { value: 'needsAction', label: 'Cần bạn xử lý', count: needsActionCount },
     { value: 'running', label: 'Đang chạy', count: runningCount },
     { value: 'done', label: 'Đã xong', count: doneCount },
     { value: 'all', label: 'Tất cả', count: allCount },
@@ -353,7 +398,7 @@ export function MyTasksPage() {
   const shown = useMemo(() => {
     if (!tasks) return []
     if (tab === 'all') return tasks
-    if (tab === 'posted') return tasks.filter((t) => t.status === 'OPEN')
+    if (tab === 'needsAction') return tasks.filter((t) => t.status === 'OPEN' && t.pendingApplicantCount > 0)
     if (tab === 'running') return tasks.filter((t) => t.status === 'ASSIGNED')
     return tasks.filter((t) => t.status === 'COMPLETED' || t.status === 'CLOSED')
   }, [tasks, tab])
@@ -442,9 +487,6 @@ export function MyTasksPage() {
             <DataRow label="Đang tạm giữ" value="—" numeric strong />
             <DataRow label="Chờ thanh toán" value="—" numeric />
             <DataRow label="Phí nền tảng dự kiến" value="—" numeric />
-            <p style={{ marginTop: 'var(--sp-3)', marginBottom: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Bản xem trước giao diện — ví và tạm giữ tiền thật sẽ có khi module Thanh toán hoàn thành.
-            </p>
           </Card>
         </div>
       </div>

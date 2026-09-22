@@ -111,6 +111,13 @@ export function updatePhone(phone: string, newFirebaseIdToken: string, oldFireba
   return apiFetch<void>('/auth/me/phone', { method: 'PATCH', body: { phone, newFirebaseIdToken, oldFirebaseIdToken } })
 }
 
+/** Kiem tra so dien thoai da duoc tai khoan khac dung chua - goi TRUOC khi gui OTP Firebase
+ *  o buoc nhap so (xem PhoneVerificationFlow.tsx), de bao loi ngay thay vi doi den buoc xac
+ *  minh OTP moi biet. Loi AUTH-409-PHONE_EXISTS neu so nay da duoc dang ky. */
+export function checkPhoneAvailable(phone: string) {
+  return apiFetch<void>('/auth/me/phone/check', { method: 'POST', body: { phone } })
+}
+
 // ---------------------------------------------------------------------------
 // Doi email - luong 4 buoc: gui OTP toi email hien tai -> xac minh -> nhap email moi
 // (gui OTP rieng toi email do) -> xac minh -> doi that su. Xem EmailChangeDialog.tsx.
