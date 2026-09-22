@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AccountSecurityPage } from '../pages/AccountSecurityPage.tsx'
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage.tsx'
+import { InboxPage } from '../pages/InboxPage.tsx'
 import { JobsPage } from '../pages/JobsPage.tsx'
 import { KycPage } from '../pages/KycPage.tsx'
 import { LandingPage } from '../pages/LandingPage.tsx'
@@ -14,6 +15,7 @@ import { ProfilePage } from '../pages/ProfilePage.tsx'
 import { PublicProfilePage } from '../pages/PublicProfilePage.tsx'
 import { RegisterPage } from '../pages/RegisterPage.tsx'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage.tsx'
+import { TaskCandidatesPage } from '../pages/TaskCandidatesPage.tsx'
 import { SuggestedTaskersPage } from '../pages/SuggestedTaskersPage.tsx'
 import { TaskerFeedPage } from '../pages/TaskerFeedPage.tsx'
 import { TaskerJobDetailPage } from '../pages/TaskerJobDetailPage.tsx'
@@ -83,6 +85,30 @@ function App() {
           element={(
             <RoleGuard allow={['poster', 'tasker']}>
               <JobsPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/tin-nhan"
+          element={(
+            <RoleGuard allow={['poster', 'tasker']}>
+              <InboxPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/tin-nhan/:applicationId"
+          element={(
+            <RoleGuard allow={['poster', 'tasker']}>
+              <InboxPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/viec-cua-toi/:taskId/ung-vien"
+          element={(
+            <RoleGuard allow={['poster']}>
+              <TaskCandidatesPage />
             </RoleGuard>
           )}
         />

@@ -17,10 +17,12 @@ import { AppShell } from '../components/AppShell.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { listCertificateRequirements, getMyCertifications } from '../api/users.ts'
 import type { CategoryCertificateRequirementResponse, CertificationDetailResponse } from '../api/users.ts'
-import { applyToTask, getFeedTask } from '../api/tasks.ts'
+import { applyToTask, createInquiry, getFeedTask } from '../api/tasks.ts'
 import type { TaskFeedItemResponse } from '../api/tasks.ts'
 import { ApiError } from '../api/client.ts'
 import { toKycStatusState, useTaskerEligibility } from '../features/tasker/useTaskerEligibility.ts'
+import { LOCATION_TYPE_LABELS } from '../utils/locationType.ts'
+import { SUPPLIES_STATUS_LABELS } from '../utils/suppliesStatus.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 
@@ -56,6 +58,8 @@ interface RequirementRow {
  * disabled - khong phai vi thieu accountId that nua
  * (job.posterId gio la that) ma vi module Review chua ton tai, chua co diem uy tin de hien thi
  * dang hoang, xem TaskFeedItemResponse. Chi role TASKER vao duoc (RoleGuard o App.tsx).
+ * locationType/arrivalNotes/suppliesStatus/suppliesNote (2026-09-14) hien bang DataRow, an
+ * han khi null/rong - cung du lieu Poster da khai bao luc dang viec (PostTaskPage.tsx).
  */
 export function TaskerJobDetailPage() {
   const { jobId } = useParams()
@@ -70,6 +74,7 @@ export function TaskerJobDetailPage() {
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [inquiring, setInquiring] = useState(false)
 
   useEffect(() => {
     if (!jobId) { setJob(null); return }
@@ -133,6 +138,24 @@ export function TaskerJobDetailPage() {
       .finally(() => setSubmitting(false))
   }
 
+  // "Hoi them" (INQUIRING) dung chung dieu kien VERIFIED voi "Gui ung tuyen" (canApply) - Tasker
+  // phai co chung chi phu hop danh muc nay moi duoc mo kenh chat hoi truoc, khong rieng dieu
+  // kien nao khac (UC16 muc 2). Thanh cong thi dieu huong thang sang khung chat vua mo.
+  const handleInquire = () => {
+    setInquiring(true)
+    createInquiry(job.id, message.trim())
+      .then((application) => {
+        useToastStore.getState().pushToast('success', 'Đã gửi yêu cầu hỏi thêm.')
+        navigate(`/tin-nhan/${application.id}`, {
+          state: { counterpartName: job.posterName, counterpartAvatarUrl: job.posterAvatarUrl },
+        })
+      })
+      .catch((error) => {
+        setLoadError(error instanceof ApiError ? error.message : 'Gửi yêu cầu hỏi thêm thất bại, thử lại sau.')
+      })
+      .finally(() => setInquiring(false))
+  }
+
   return (
     <AppShell navValue="feed" title="Chi tiết việc" subtitle={category?.name ?? job.categoryName}>
       <Link
@@ -156,6 +179,11 @@ export function TaskerJobDetailPage() {
               <span className="flex items-center gap-1"><Icon name="lock" size={15} />Trả qua tạm giữ</span>
             </div>
             <p style={{ fontSize: 'var(--fs-body-lg)', color: 'var(--text-body)', lineHeight: 1.6, maxWidth: 620 }}>{job.description}</p>
+
+            {job.locationType && <DataRow label="Loại địa điểm" value={LOCATION_TYPE_LABELS[job.locationType]} />}
+            {job.arrivalNotes && <DataRow label="Lưu ý khi tới nơi" value={job.arrivalNotes} />}
+            <DataRow label="Tình trạng vật tư" value={SUPPLIES_STATUS_LABELS[job.suppliesStatus]} />
+            {job.suppliesNote && <DataRow label="Mô tả thêm về vật tư" value={job.suppliesNote} />}
 
             {job.imageUrls.length > 0 && (
               <Button variant="secondary" size="sm" icon="image" style={{ alignSelf: 'flex-start' }} onClick={() => lightbox.open(job.imageUrls, 0)}>
@@ -200,18 +228,27 @@ export function TaskerJobDetailPage() {
               </Alert>
             )}
 
-            <Field label="Lời nhắn ngắn" hint="Nói rõ kinh nghiệm liên quan và cách bạn xử lý.">
+            <Field label="Lời nhắn ngắn" hint="Nói rõ kinh nghiệm liên quan và cách bạn xử lý — hoặc nêu câu hỏi nếu muốn hỏi thêm trước.">
               <Textarea rows={3} placeholder="Tôi làm điện nước 6 năm, có thể tới đúng giờ…" value={message} onChange={(e) => setMessage(e.target.value)} disabled={submitted} />
             </Field>
 
-            <Button
-              size="lg" icon={submitted ? 'check' : 'send'}
-              disabled={!canApply || submitting || submitted}
-              onClick={handleApply}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              {submitted ? 'Đã gửi ứng tuyển' : submitting ? 'Đang gửi…' : 'Gửi ứng tuyển'}
-            </Button>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <Button
+                size="lg" icon={submitted ? 'check' : 'send'}
+                disabled={!canApply || submitting || inquiring || submitted}
+                onClick={handleApply}
+              >
+                {submitted ? 'Đã gửi ứng tuyển' : submitting ? 'Đang gửi…' : 'Gửi ứng tuyển'}
+              </Button>
+              <Button
+                variant="secondary" size="lg" icon="message-square"
+                disabled={!canApply || submitting || inquiring || submitted || message.trim().length === 0}
+                title={!canApply ? 'Cần đủ điều kiện chứng chỉ như khi ứng tuyển mới hỏi thêm được' : message.trim().length === 0 ? 'Nhập câu hỏi trước khi gửi' : undefined}
+                onClick={handleInquire}
+              >
+                {inquiring ? 'Đang gửi…' : 'Nhắn tin hỏi thêm'}
+              </Button>
+            </div>
           </Card>
         </div>
 
@@ -226,11 +263,17 @@ export function TaskerJobDetailPage() {
                 </div>
               </>
             ) : (
-              <p style={{ margin: 0, fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>Ngân sách thoả thuận trực tiếp với người đăng.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span className="tc-label" style={{ fontSize: 'var(--fs-label)' }}>Ngân sách</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', fontSize: 'var(--fs-h3)', fontWeight: 'var(--fw-bold)', color: 'var(--amber-700)' }}>
+                  <Icon name="handshake" size={20} />
+                  Thoả thuận trực tiếp
+                </span>
+                <p style={{ margin: 0, marginTop: 'var(--sp-1)', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                  Trao đổi giá phù hợp với người đăng khi ứng tuyển.
+                </p>
+              </div>
             )}
-            <p style={{ marginTop: 'var(--sp-3)', marginBottom: 0, fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Bản xem trước giao diện — ví và tạm giữ tiền thật sẽ có khi module Thanh toán hoàn thành.
-            </p>
           </Card>
 
           <Alert tone="money" title="Tiền được giữ trước khi bạn bắt đầu">
@@ -238,7 +281,7 @@ export function TaskerJobDetailPage() {
           </Alert>
 
           <Card padding="var(--sp-5)" className="flex items-center gap-3">
-            <Avatar name={job.posterName ?? 'Người đăng'} size={44} />
+            <Avatar name={job.posterName ?? 'Người đăng'} src={job.posterAvatarUrl ?? undefined} size={44} />
             <div className="flex-1">
               <strong style={{ fontSize: 'var(--fs-body)' }}>{job.posterName ?? 'Người đăng việc'}</strong>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Người đăng việc</div>

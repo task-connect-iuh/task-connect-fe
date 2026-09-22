@@ -5,35 +5,53 @@ import { Badge } from '@ds/components/core/Badge'
 import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
 import { DataRow } from '@ds/components/marketplace/DataRow'
+import { Dialog } from '@ds/components/feedback/Dialog'
 import { EmptyState } from '@ds/components/feedback/EmptyState'
 import { Icon } from '@ds/components/core/Icon'
 import { MoneyAmount } from '@ds/components/marketplace/MoneyAmount'
 import { Tabs } from '@ds/components/navigation/Tabs'
 import { AppShell } from '../components/AppShell.tsx'
+import { DialogViewport } from '../components/DialogViewport.tsx'
 import { DirectionsModal } from '../components/DirectionsModal.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
-import { getMyApplications } from '../api/tasks.ts'
+import { applyFromInquiry, getMyApplications, withdrawApplication } from '../api/tasks.ts'
 import type { MyApplicationResponse, TaskApplicationStatus } from '../api/tasks.ts'
 import { acceptInvite, declineInvite, getMyInvites } from '../api/matching.ts'
 import type { MyInviteResponse, TaskerInviteStatus } from '../api/matching.ts'
 import { ApiError } from '../api/client.ts'
+import { LOCATION_TYPE_LABELS } from '../utils/locationType.ts'
+import { SUPPLIES_STATUS_LABELS } from '../utils/suppliesStatus.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
+import { useLockBodyScroll } from '../utils/useLockBodyScroll.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 
 // Nhan/tone rieng cho TaskApplicationStatus - KHONG dung vocabulary cua StatusPill (component
 // do chi danh cho trang thai booking/thanh toan, xem 01-domain-glossary.md), cung nguyen tac
-// da ap dung cho TASK_STATUS_LABEL o MyTasksPage.tsx (Poster).
+// da ap dung cho TASK_STATUS_LABEL o MyTasksPage.tsx (Poster). Mo rong tu 4 len 10 gia tri o
+// Round B0-B6 module Chat - xem TaskApplicationStatus trong api/tasks.ts.
 const APPLICATION_STATUS_LABEL: Record<TaskApplicationStatus, string> = {
   PENDING: 'Chờ xác nhận',
   ACCEPTED: 'Đã nhận việc',
   NEEDS_RECONFIRM: 'Cần ứng tuyển lại',
   REJECTED: 'Bị từ chối',
+  INQUIRING: 'Đang hỏi thêm',
+  INVITED: 'Bạn được mời',
+  WITHDRAWN: 'Đã rút ứng tuyển',
+  REJECTED_AUTO: 'Việc đã giao người khác',
+  DECLINED: 'Đã từ chối lời mời',
+  INVITE_EXPIRED: 'Lời mời đã hết hạn',
 }
 const APPLICATION_STATUS_TONE: Record<TaskApplicationStatus, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
   PENDING: 'info',
   ACCEPTED: 'success',
   NEEDS_RECONFIRM: 'warning',
   REJECTED: 'neutral',
+  INQUIRING: 'info',
+  INVITED: 'warning',
+  WITHDRAWN: 'neutral',
+  REJECTED_AUTO: 'neutral',
+  DECLINED: 'danger',
+  INVITE_EXPIRED: 'neutral',
 }
 
 /** "Thứ 5, 14:00" - dung cho lich viec sap toi va nhan gio trong danh sach. */
@@ -42,6 +60,15 @@ function formatWeekdayTime(iso: string) {
   const weekday = date.toLocaleDateString('vi-VN', { weekday: 'long' })
   const time = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${time}`
+}
+
+// formatBudget/formatDateTime: cung mau MyTasksPage.tsx (Poster) - dung cho ApplicationDetailDialog.
+function formatBudget(amount: number | null) {
+  return amount != null ? `${amount.toLocaleString('vi-VN')} đ` : 'Thoả thuận'
+}
+
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('vi-VN')
 }
 
 interface ScheduleClash {
@@ -72,13 +99,91 @@ function findScheduleClashes(jobs: MyApplicationResponse[]): ScheduleClash[] {
   return clashes
 }
 
+interface ApplicationDetailDialogProps {
+  application: MyApplicationResponse
+  onClose: () => void
+}
+
+/** Xem chi tiet 1 viec da ung tuyen/da nhan - tuong tu TaskDetailDialog cua MyTasksPage.tsx
+ * (Poster) de dong bo giao dien giua 2 vai tro, nhung khong co LifecycleTracker/ApplicantsPanel
+ * (Tasker khong xac nhan ung vien). Dung lai du lieu da co san tu getMyApplications(), khong
+ * goi rieng request nao khac. Loai dia diem/luu y/tinh trang vat tu (2026-09-14) hien bang
+ * DataRow, an han khi null/rong (tru "Tinh trang vat tu" - luon bat buoc co gia tri). */
+export function ApplicationDetailDialog({ application, onClose }: ApplicationDetailDialogProps) {
+  useLockBodyScroll(true)
+  const lightbox = useImageLightbox()
+
+  return (
+    <DialogViewport>
+      <Dialog title={application.taskTitle} subtitle={application.categoryName} onClose={onClose} style={{ maxWidth: 640 }}>
+        <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 'var(--sp-1)' }}>
+          <div className="flex flex-col gap-4">
+            <Badge tone={APPLICATION_STATUS_TONE[application.status]}>{APPLICATION_STATUS_LABEL[application.status]}</Badge>
+
+            {application.taskImageUrls.length > 0 && (
+              <Button
+                variant="secondary" size="sm" icon="image"
+                onClick={() => lightbox.open(application.taskImageUrls, 0)}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                Xem ảnh ({application.taskImageUrls.length})
+              </Button>
+            )}
+
+            <p style={{ fontSize: 'var(--fs-body)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{application.taskDescription}</p>
+
+            <DataRow label="Địa chỉ" value={application.taskAddressText} />
+            {application.taskLocationType && <DataRow label="Loại địa điểm" value={LOCATION_TYPE_LABELS[application.taskLocationType]} />}
+            {application.taskArrivalNotes && <DataRow label="Lưu ý khi tới nơi" value={application.taskArrivalNotes} />}
+            <DataRow label="Tình trạng vật tư" value={SUPPLIES_STATUS_LABELS[application.taskSuppliesStatus]} />
+            {application.taskSuppliesNote && <DataRow label="Mô tả thêm về vật tư" value={application.taskSuppliesNote} />}
+            <DataRow label="Ngân sách" value={formatBudget(application.taskBudgetAmount)} numeric />
+            <DataRow label="Thời gian mong muốn" value={application.taskScheduledAt ? formatDateTime(application.taskScheduledAt) : 'Chưa xác định'} />
+            <DataRow label="Ứng tuyển lúc" value={formatDateTime(application.createdAt)} />
+
+            {application.message && (
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                Lời nhắn của bạn: <span style={{ color: 'var(--text-body)' }}>{application.message}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Dialog>
+
+      {lightbox.viewerUrl && (
+        <ImageLightbox
+          url={lightbox.viewerUrl}
+          zoom={lightbox.viewerZoom}
+          rotation={lightbox.viewerRotation}
+          onClose={lightbox.close}
+          onZoomIn={lightbox.zoomIn}
+          onZoomOut={lightbox.zoomOut}
+          onRotate={lightbox.rotate}
+          index={lightbox.index}
+          total={lightbox.total}
+          onNext={lightbox.next}
+          onPrev={lightbox.prev}
+          onGoTo={lightbox.goTo}
+        />
+      )}
+    </DialogViewport>
+  )
+}
+
 interface ApplicationRowProps {
   application: MyApplicationResponse
+  onOpenDetail: () => void
   onOpenGallery: (startIndex: number) => void
+  onWithdraw: () => void
+  withdrawing: boolean
+  onApplyFromInquiry: () => void
+  applying: boolean
 }
 
 /** Mot dong viec da ung tuyen/da nhan - phong theo bo cuc TaskRow cua MyTasksPage.tsx (Poster) de dong bo giao dien giua 2 vai tro. */
-function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
+function ApplicationRow({
+  application, onOpenDetail, onOpenGallery, onWithdraw, withdrawing, onApplyFromInquiry, applying,
+}: ApplicationRowProps) {
   const navigate = useNavigate()
   const [showDirections, setShowDirections] = useState(false)
   return (
@@ -120,6 +225,7 @@ function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
       )}
 
       <div className="flex items-center gap-3" style={{ paddingTop: 'var(--sp-3)', borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
+        <Button variant="secondary" size="sm" icon="eye" onClick={onOpenDetail}>Xem chi tiết</Button>
         {application.taskImageUrls.length > 0 ? (
           <Button variant="secondary" size="sm" icon="image" onClick={() => onOpenGallery(0)}>
             Xem ảnh ({application.taskImageUrls.length})
@@ -130,9 +236,16 @@ function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
           </span>
         )}
 
+        <Button
+          variant="secondary" size="sm" icon="message-square"
+          onClick={() => navigate(`/tin-nhan/${application.applicationId}`, {
+            state: { counterpartName: application.posterName },
+          })}
+        >
+          Nhắn tin
+        </Button>
         {application.status === 'ACCEPTED' && (
           <>
-            <Button variant="secondary" size="sm" icon="message-square" disabled title="Nhắn tin sẽ có khi module Chat hoàn thành">Nhắn tin</Button>
             <Button size="sm" icon="badge-check" disabled title="Báo hoàn tất sẽ có khi module Booking hoàn thành">Báo hoàn tất</Button>
             <Button variant="ghost" size="sm" icon="navigation" onClick={() => setShowDirections(true)}>
               Chỉ đường
@@ -141,6 +254,16 @@ function ApplicationRow({ application, onOpenGallery }: ApplicationRowProps) {
         )}
         {application.status === 'NEEDS_RECONFIRM' && (
           <Button size="sm" icon="refresh-cw" onClick={() => navigate(`/tim-viec/${application.taskId}`)}>Ứng tuyển lại</Button>
+        )}
+        {application.status === 'INQUIRING' && (
+          <Button size="sm" icon="send" disabled={applying} onClick={onApplyFromInquiry}>
+            {applying ? 'Đang gửi…' : 'Ứng tuyển'}
+          </Button>
+        )}
+        {application.status === 'PENDING' && (
+          <Button variant="ghost" size="sm" icon="undo-2" disabled={withdrawing} onClick={onWithdraw}>
+            {withdrawing ? 'Đang rút…' : 'Rút ứng tuyển'}
+          </Button>
         )}
         <div style={{ marginLeft: 'auto' }} />
         {application.status !== 'REJECTED' && (
@@ -248,7 +371,7 @@ function InvitesPanel({ invites, onResponded }: InvitesPanelProps) {
   )
 }
 
-type JobTab = 'accepted' | 'waiting' | 'all'
+type JobTab = 'accepted' | 'waiting' | 'inquiring' | 'all'
 
 /**
  * Viec ban da nhan (UC10/UC11, phan xem sau khi ung tuyen) - Tasker. Du lieu that qua
@@ -257,7 +380,22 @@ type JobTab = 'accepted' | 'waiting' | 'all'
  * COMPLETED - nhom theo dung TaskApplicationStatus that (PENDING/ACCEPTED/NEEDS_RECONFIRM/
  * REJECTED). Canh bao "2 viec sat gio nhau" tinh tren taskScheduledAt that (khong con
  * startHour/durationHours minh hoa). Tien te (thu nhap, Mo vi) van disabled dung yeu cau
- * "de sau" cua nguoi dung. Chi role TASKER vao duoc.
+ * "de sau" cua nguoi dung. Chi role TASKER vao duoc. Nut "Xem chi tiết" tren moi dong
+ * (2026-09-14) mo ApplicationDetailDialog, dong bo voi TaskDetailDialog cua MyTasksPage.tsx
+ * (Poster) - can taskDescription/taskLocationType/taskArrivalNotes/taskSuppliesStatus/
+ * taskSuppliesNote moi trong MyApplicationResponse (BE) de hien du thong tin.
+ * Tab "Dang hoi them" (2026-09-20) loc rieng status INQUIRING (don tao boi createInquiry() o
+ * TaskerJobDetailPage.tsx khi Tasker bam "Nhan tin hoi them" - chua phai don ung tuyen that).
+ * Nut "Rut ung tuyen" tren cac the PENDING o tab "Cho xac nhan" goi withdrawApplication() da co
+ * san (BE cung cho rut don INQUIRING, nhung UI nay chi gan cho PENDING theo dung yeu cau).
+ * SUA 2026-09-21: nut "Ung tuyen" tren the INQUIRING BAN DAU dieu huong sang /tim-viec/:taskId
+ * nhung LUON 404 - browse/apply deu coi INQUIRING la trang thai "dang chan"
+ * (BLOCKING_APPLICATION_STATUSES o TaskApplicationService), nen backend tu loai chinh task nay
+ * khoi ket qua browse cua chinh Tasker dang co don INQUIRING do (coi nhu TASK_NOT_FOUND). Doi
+ * sang goi thang applyFromInquiry() (API moi applyFromInquiry() trong api/tasks.ts, xem
+ * TaskApplicationService.applyFromInquiry() o BE) de chuyen thang don INQUIRING thanh PENDING -
+ * MO RONG business rule ngoai dac ta muc 3 (ban dau chi nang cap qua acceptPriceProposal trong
+ * chat), da hoi va duoc nguoi dung xac nhan chon huong nay (xem PROGRESS-TASK-TASKER-MODULE.md).
  */
 export function TaskerJobsPage() {
   const navigate = useNavigate()
@@ -265,6 +403,9 @@ export function TaskerJobsPage() {
   const [invites, setInvites] = useState<MyInviteResponse[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [tab, setTab] = useState<JobTab>('accepted')
+  const [detailApplication, setDetailApplication] = useState<MyApplicationResponse | null>(null)
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null)
+  const [applyingId, setApplyingId] = useState<string | null>(null)
   const rowLightbox = useImageLightbox()
 
   useEffect(() => {
@@ -285,7 +426,32 @@ export function TaskerJobsPage() {
     () => (applications ?? []).filter((a) => a.status === 'PENDING' || a.status === 'NEEDS_RECONFIRM'),
     [applications],
   )
-  const shown = tab === 'accepted' ? accepted : tab === 'waiting' ? waiting : (applications ?? [])
+  const inquiring = useMemo(() => (applications ?? []).filter((a) => a.status === 'INQUIRING'), [applications])
+  const shown = tab === 'accepted' ? accepted : tab === 'waiting' ? waiting : tab === 'inquiring' ? inquiring : (applications ?? [])
+
+  /** Rut mot don dang PENDING - dung lai withdrawApplication() da co san cho man Hoi them, chi khac o tab hien thi. */
+  const handleWithdraw = (application: MyApplicationResponse) => {
+    setWithdrawingId(application.applicationId)
+    withdrawApplication(application.taskId, application.applicationId)
+      .then((updated) => {
+        setApplications((prev) => prev?.map((a) => (a.applicationId === updated.id ? { ...a, status: updated.status } : a)) ?? null)
+        useToastStore.getState().pushToast('success', 'Đã rút ứng tuyển.')
+      })
+      .catch((error) => useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : 'Rút ứng tuyển thất bại, thử lại sau.'))
+      .finally(() => setWithdrawingId(null))
+  }
+
+  /** Chuyen thang 1 don dang INQUIRING (the "Dang hoi them") thanh PENDING - xem Javadoc TaskApplicationService.applyFromInquiry() o BE. */
+  const handleApplyFromInquiry = (application: MyApplicationResponse) => {
+    setApplyingId(application.applicationId)
+    applyFromInquiry(application.taskId, application.applicationId)
+      .then((updated) => {
+        setApplications((prev) => prev?.map((a) => (a.applicationId === updated.id ? { ...a, status: updated.status } : a)) ?? null)
+        useToastStore.getState().pushToast('success', 'Đã gửi ứng tuyển.')
+      })
+      .catch((error) => useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : 'Gửi ứng tuyển thất bại, thử lại sau.'))
+      .finally(() => setApplyingId(null))
+  }
 
   const clashes = useMemo(() => findScheduleClashes(accepted), [accepted])
 
@@ -333,8 +499,7 @@ export function TaskerJobsPage() {
               title="Hai việc đã nhận sát giờ nhau"
             >
               <strong>{clash.first.taskTitle}</strong> và <strong>{clash.second.taskTitle}</strong> cách nhau chỉ{' '}
-              {clash.gapMinutes < 0 ? 'trùng giờ' : `${clash.gapMinutes} phút`}. Nhắn tin sẽ có khi module Chat hoàn thành —
-              hiện tại hãy liên hệ trực tiếp người đăng việc để sắp xếp lại.
+              {clash.gapMinutes < 0 ? 'trùng giờ' : `${clash.gapMinutes} phút`}. Nhắn tin với người đăng việc để sắp xếp lại lịch.
             </Alert>
           ))}
 
@@ -346,6 +511,7 @@ export function TaskerJobsPage() {
             tabs={[
               { value: 'accepted', label: 'Đã nhận', count: accepted.length },
               { value: 'waiting', label: 'Chờ xác nhận', count: waiting.length },
+              { value: 'inquiring', label: 'Đang hỏi thêm', count: inquiring.length },
               { value: 'all', label: 'Tất cả', count: applications?.length ?? 0 },
             ]}
           />
@@ -355,7 +521,12 @@ export function TaskerJobsPage() {
               <ApplicationRow
                 key={application.applicationId}
                 application={application}
+                onOpenDetail={() => setDetailApplication(application)}
                 onOpenGallery={(startIndex) => rowLightbox.open(application.taskImageUrls, startIndex)}
+                onWithdraw={() => handleWithdraw(application)}
+                withdrawing={withdrawingId === application.applicationId}
+                onApplyFromInquiry={() => handleApplyFromInquiry(application)}
+                applying={applyingId === application.applicationId}
               />
             ))}
             {applications && shown.length === 0 && (
@@ -385,10 +556,7 @@ export function TaskerJobsPage() {
             <DataRow label="Đang tạm giữ" value="—" numeric strong />
             <DataRow label="Chờ thanh toán" value="—" numeric />
             <DataRow label="Phí nền tảng dự kiến" value="—" numeric />
-            <p style={{ marginTop: 'var(--sp-3)', marginBottom: 'var(--sp-3)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Bản xem trước giao diện — ví và tạm giữ tiền thật sẽ có khi module Thanh toán hoàn thành.
-            </p>
-            <Button block variant="money" size="sm" icon="banknote-arrow-down" disabled title="Ví chưa khả dụng">Mở ví</Button>
+            <Button block variant="money" size="sm" icon="banknote-arrow-down" disabled title="Ví chưa khả dụng" style={{ marginTop: 'var(--sp-3)' }}>Mở ví</Button>
           </Card>
 
           <Alert tone="info" title="Nhận nhiều việc không làm tăng thứ hạng">
@@ -396,6 +564,10 @@ export function TaskerJobsPage() {
           </Alert>
         </div>
       </div>
+
+      {detailApplication && (
+        <ApplicationDetailDialog application={detailApplication} onClose={() => setDetailApplication(null)} />
+      )}
 
       {rowLightbox.viewerUrl && (
         <ImageLightbox

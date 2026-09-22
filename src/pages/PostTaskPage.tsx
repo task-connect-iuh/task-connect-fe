@@ -20,18 +20,23 @@ import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
 import { TimeSelect } from '../components/TimeSelect.tsx'
 import { createTask, createTaskImageUploadUrl } from '../api/tasks.ts'
+import type { SuppliesStatus } from '../api/tasks.ts'
 import { addSavedAddress, deleteSavedAddress, getMyProfile, getMySavedAddresses, listServiceCategories } from '../api/users.ts'
 import type { LocationType, SavedAddressResponse, ServiceCategoryResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
 import type { ResolvedAddress } from '../utils/geocoding.ts'
 import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
+import { SUPPLIES_STATUS_OPTIONS } from '../utils/suppliesStatus.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 
 const MAX_IMAGES = 5
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+// Gioi han so dia chi da luu toi da moi tai khoan - khop MAX_SAVED_ADDRESSES_PER_ACCOUNT ben BE
+// (SavedAddressService), chot cung nguoi dung 2026-09-14.
+const MAX_SAVED_ADDRESSES = 5
 // So Tasker uoc tinh khong con o nhap tren giao dien (theo yeu cau nguoi dung) - luon gui 1,
 // dung nghia voi OQ-08 da chot tam: truong nay chi de hien thi, khong co nghia he thong.
 const DEFAULT_ESTIMATED_WORKERS_NEEDED = 1
@@ -39,9 +44,23 @@ const DEFAULT_ESTIMATED_WORKERS_NEEDED = 1
 // so tien o rail ben phai, khong phai tinh toan that. Tinh toan escrow that (khi module
 // Payment ton tai) phai doc tu admin.system_parameters, khong hardcode - xem 02-source-of-truth.md.
 const PLATFORM_FEE_RATE = 0.08
+// Bien do ngan sach Poster duoc phep dat, don vi NGHIN dong (o nhap nhan don vi nghin - go "50"
+// nghia la 50.000 d, cung kieu nhap voi o gia tham khao cua Tasker o TaskerSkillsPage.tsx).
+// Nguong nghiep vu chot cung nguoi dung 2026-09-16: 100.000 d den 50.000.000 d - khop @Min/@Max
+// tren budgetAmount ben BE (CreateTaskRequest.java). De trong van hop le ("thoa thuan").
+const BUDGET_MIN_THOUSAND = 100
+const BUDGET_MAX_THOUSAND = 50_000
+const BUDGET_RANGE_MESSAGE = `Ngân sách phải từ ${(BUDGET_MIN_THOUSAND * 1000).toLocaleString('vi-VN')} đ đến ${(BUDGET_MAX_THOUSAND * 1000).toLocaleString('vi-VN')} đ.`
 
 function formatVnd(amount: number) {
   return `${amount.toLocaleString('vi-VN')} đ`
+}
+
+/** Chuoi so nguyen nguoi dung nhap (don vi nghin dong) -> chuoi tien VND day du, vd "50" -> "50.000 đ". Rong hoac khong phai so tra ve rong. Cung cach lam voi formatThousandVnd() o TaskerSkillsPage.tsx. */
+function formatThousandVnd(digitsInThousand: string) {
+  const n = Number(digitsInThousand)
+  if (!digitsInThousand || Number.isNaN(n)) return ''
+  return formatVnd(n * 1000)
 }
 
 /** Ngay mai theo gio dia phuong trinh duyet, dang "yyyy-mm-dd" - dung lam min cho lich chon
@@ -87,7 +106,9 @@ interface PendingImage {
  * useEffect ben duoi) nhung sua duoc rieng, CHi ap dung cho tin dang nay - locationType/
  * arrivalNotes khong bat buoc. Ngan sach va thoi gian mong muon deu tuy chon (khong bat
  * buoc) theo quyet dinh da chot voi nguoi dung. Chi role TASK_POSTER vao duoc trang nay
- * (RoleGuard o App.tsx).
+ * (RoleGuard o App.tsx). Tinh trang vat tu (suppliesStatus) bat buoc chon, KHONG co gia tri
+ * mac dinh - khac locationType/arrivalNotes. Mo ta them (suppliesNote) luon tuy chon, chi
+ * HIEN khi chon FULL/PARTIAL, an han khoi DOM (khong disable) khi chon UNKNOWN.
  */
 export function PostTaskPage() {
   const navigate = useNavigate()
@@ -112,6 +133,10 @@ export function PostTaskPage() {
   // tren, nhung la truong RIENG cua Task (xem CreateTaskPayload.locationType/arrivalNotes).
   const [locationType, setLocationType] = useState<LocationType | ''>('')
   const [arrivalNotes, setArrivalNotes] = useState('')
+  // Tinh trang vat tu - bat buoc chon, KHONG co gia tri mac dinh (khac locationType o tren).
+  // suppliesNote chi hien khi FULL/PARTIAL, an han khoi DOM (khong disable) khi UNKNOWN.
+  const [suppliesStatus, setSuppliesStatus] = useState<SuppliesStatus | ''>('')
+  const [suppliesNote, setSuppliesNote] = useState('')
   // So dia chi tu luu de chon nhanh (giong so dia chi giao hang Shopee) - doc lap voi
   // addressText/lat/lng/locationType/arrivalNotes o tren, chi la danh sach goi y de dien
   // nhanh ca 5 truong cung luc. selectedSavedAddressId chi de highlight Chip dang chon,
@@ -122,6 +147,8 @@ export function PostTaskPage() {
   const [newAddressLabel, setNewAddressLabel] = useState('')
   const [savingAddress, setSavingAddress] = useState(false)
   const [savedAddressError, setSavedAddressError] = useState('')
+  // Luu don vi NGHIN dong (nguoi dung go "50" nghia la 50.000 d) - nhan 1000 truoc khi gui BE,
+  // giong o gia tham khao cua Tasker. Rong = khong dat ngan sach, hien thi "thoa thuan".
   const [budget, setBudget] = useState('')
   // Ngay + gio mong muon, tach rieng thay vi 1 <input type="datetime-local"> - trinh duyet cho
   // go phut le (vd "00:01"), BE nhan Instant.parse() nghiem ngat (ISO-8601 co giay + timezone)
@@ -345,12 +372,20 @@ export function PostTaskPage() {
     if (!title.trim()) nextErrors.title = 'Nhập tiêu đề công việc.'
     if (!description.trim()) nextErrors.description = 'Mô tả công việc cần làm.'
     if (!categoryId) nextErrors.categoryId = 'Chọn nhóm dịch vụ.'
+    if (!suppliesStatus) nextErrors.suppliesStatus = 'Chọn tình trạng vật tư.'
     if (!nextErrors.addressText && !addressText.trim()) nextErrors.addressText = 'Chọn địa chỉ cần thực hiện công việc.'
     if (!nextErrors.addressText && (!locationLat.trim() || !locationLng.trim())) {
       nextErrors.addressText = 'Chưa xác định được toạ độ — chọn lại từ danh sách gợi ý hoặc chọn vị trí trên bản đồ.'
     }
     if (scheduledDate && scheduledDate < tomorrowDateString()) {
       nextErrors.scheduledAt = 'Thời gian mong muốn phải sau hôm nay.'
+    }
+    // Ngan sach van tuy chon - chi kiem bien do khi Poster co nhap (quyet dinh nguoi dung 2026-09-16).
+    if (budget.trim()) {
+      const budgetInThousand = Number(budget)
+      if (Number.isNaN(budgetInThousand) || budgetInThousand < BUDGET_MIN_THOUSAND || budgetInThousand > BUDGET_MAX_THOUSAND) {
+        nextErrors.budgetAmount = BUDGET_RANGE_MESSAGE
+      }
     }
     setErrors(nextErrors)
     if (Object.values(nextErrors).some(Boolean)) return
@@ -367,7 +402,10 @@ export function PostTaskPage() {
         lng: Number(locationLng),
         locationType: locationType || undefined,
         arrivalNotes: arrivalNotes.trim() || undefined,
-        budgetAmount: budget.trim() ? Number(budget) : undefined,
+        suppliesStatus: suppliesStatus as SuppliesStatus,
+        suppliesNote: suppliesStatus !== 'UNKNOWN' ? (suppliesNote.trim() || undefined) : undefined,
+        // Nguoi dung go don vi nghin (vd "50") - nhan 1000 truoc khi gui, BE luu dong nguyen.
+        budgetAmount: budget.trim() ? Number(budget) * 1000 : undefined,
         scheduledAt: buildScheduledAtIso(scheduledDate, scheduledTime),
         estimatedWorkersNeeded: DEFAULT_ESTIMATED_WORKERS_NEEDED,
         imageUrls: images.map((img) => img.publicUrl).filter((url): url is string => !!url),
@@ -440,6 +478,28 @@ export function PostTaskPage() {
                 ...(categories ?? []).map((c) => ({ value: c.id, label: c.name }))]}
             />
           </Field>
+
+          <Field label="Tình trạng vật tư" required error={errors.suppliesStatus}>
+            <Select
+              value={suppliesStatus}
+              onChange={(e) => setSuppliesStatus(e.target.value as SuppliesStatus | '')}
+              disabled={busy}
+              error={!!errors.suppliesStatus}
+              options={[{ value: '', label: 'Chọn tình trạng vật tư' }, ...SUPPLIES_STATUS_OPTIONS]}
+            />
+          </Field>
+
+          {(suppliesStatus === 'FULL' || suppliesStatus === 'PARTIAL') && (
+            <Field label="Mô tả thêm (không bắt buộc)">
+              <Textarea
+                rows={3}
+                placeholder="VD: đã có bồn cầu, thiếu gioăng và ống nối"
+                value={suppliesNote}
+                onChange={(e) => setSuppliesNote(e.target.value)}
+                disabled={busy}
+              />
+            </Field>
+          )}
 
           <Card tone="brand" padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)', borderColor: 'var(--border-subtle)' }}>
             <div className="flex items-baseline gap-2 flex-wrap">
@@ -515,7 +575,7 @@ export function PostTaskPage() {
                       variant="secondary"
                       size="sm"
                       icon="bookmark-plus"
-                      disabled={!addressText.trim() || !locationLat.trim() || !locationLng.trim()}
+                      disabled={!addressText.trim() || !locationLat.trim() || !locationLng.trim() || savedAddresses.length >= MAX_SAVED_ADDRESSES}
                       onClick={() => setShowSaveAddressForm(true)}
                     >
                       Lưu địa chỉ này để dùng lại
@@ -546,14 +606,25 @@ export function PostTaskPage() {
                     </>
                   )}
             </div>
+            {!showSaveAddressForm && savedAddresses.length >= MAX_SAVED_ADDRESSES && (
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                Đã lưu tối đa {MAX_SAVED_ADDRESSES} địa chỉ. Xoá bớt địa chỉ cũ để lưu địa chỉ mới.
+              </span>
+            )}
             {savedAddressError && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--danger)' }}>{savedAddressError}</span>}
           </Card>
 
-          <Field label="Ngân sách" hint="Không bắt buộc — để trống hiển thị 'thoả thuận'" error={errors.budgetAmount} style={{ maxWidth: 280 }}>
+          <Field
+            label="Ngân sách"
+            hint="Nhập theo đơn vị nghìn đồng — vd nhập 50 nghĩa là 50.000 đ. Không bắt buộc, để trống hiển thị 'thoả thuận'; đã nhập thì phải trong khoảng 100.000 đ – 50.000.000 đ"
+            error={errors.budgetAmount}
+            style={{ maxWidth: 280 }}
+          >
             <Input
-              numeric inputMode="numeric" suffix="₫"
+              numeric inputMode="numeric"
+              suffix={budget ? formatThousandVnd(budget) : 'nghìn đ'}
               value={budget}
-              onChange={(e) => setBudget(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => { setBudget(e.target.value.replace(/\D/g, '')); setErrors((prev) => ({ ...prev, budgetAmount: '' })) }}
               disabled={busy}
               error={!!errors.budgetAmount}
             />
@@ -678,7 +749,8 @@ export function PostTaskPage() {
           }}
         >
           {(() => {
-            const budgetNumber = budget.trim() ? Number(budget) : 0
+            // budget la don vi nghin dong - doi ve dong nguyen truoc khi tinh phi/hien thi.
+            const budgetNumber = budget.trim() ? Number(budget) * 1000 : 0
             if (budgetNumber <= 0) {
               return (
                 <Card tone="money" padding="var(--sp-5)">
@@ -697,9 +769,6 @@ export function PostTaskPage() {
                 <DataRow label="Tasker nhận được" value={formatVnd(taskerReceives)} numeric strong />
                 <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-body)', lineHeight: 1.55, margin: 0 }}>
                   Không có phí đăng việc. Nếu bạn huỷ trước khi Tasker bắt đầu, tiền hoàn về nguyên vẹn.
-                </p>
-                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
-                  Bản xem trước giao diện — ví và tạm giữ tiền thật sẽ có khi module Thanh toán hoàn thành.
                 </p>
               </Card>
             )
