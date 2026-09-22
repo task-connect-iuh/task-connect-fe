@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
-import { AISuggestion } from '@ds/components/marketplace/AISuggestion'
 import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
 import { Checkbox } from '@ds/components/forms/Checkbox'
 import { Chip } from '@ds/components/core/Chip'
 import { DataRow } from '@ds/components/marketplace/DataRow'
+import { Dialog } from '@ds/components/feedback/Dialog'
 import { Field } from '@ds/components/forms/Field'
 import { Icon } from '@ds/components/core/Icon'
 import { Input } from '@ds/components/forms/Input'
@@ -15,6 +15,7 @@ import { Select } from '@ds/components/forms/Select'
 import { Textarea } from '@ds/components/forms/Textarea'
 import { AppShell } from '../components/AppShell.tsx'
 import { AddressAutocomplete } from '../components/AddressAutocomplete.tsx'
+import { DialogViewport } from '../components/DialogViewport.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
 import { TimeSelect } from '../components/TimeSelect.tsx'
@@ -24,7 +25,7 @@ import { addSavedAddress, deleteSavedAddress, getMyProfile, getMySavedAddresses,
 import type { LocationType, SavedAddressResponse, ServiceCategoryResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
-import type { AddressSuggestion } from '../utils/geocoding.ts'
+import type { ResolvedAddress } from '../utils/geocoding.ts'
 import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
 import { SUPPLIES_STATUS_OPTIONS } from '../utils/suppliesStatus.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
@@ -113,6 +114,9 @@ export function PostTaskPage() {
   const navigate = useNavigate()
   const [categories, setCategories] = useState<ServiceCategoryResponse[] | null>(null)
   const [categoriesError, setCategoriesError] = useState('')
+  // Id cong viec vua tao xong, dung de hien dialog hoi "xem Tasker gợi ý ngay khong" truoc khi
+  // dieu huong di - null nghia la chua dang xong (form van dang hien), khong lien quan errors.
+  const [createdTaskId, setCreatedTaskId] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -237,7 +241,7 @@ export function PostTaskPage() {
   }
 
   /** Ap dung 1 goi y duoc chon tu dropdown autocomplete o o Dia chi - cung logic ProfilePage.tsx. */
-  const applySuggestion = (suggestion: AddressSuggestion) => {
+  const applySuggestion = (suggestion: ResolvedAddress) => {
     setGeocodeError('')
     setLocationLat(suggestion.lat.toFixed(6))
     setLocationLng(suggestion.lng.toFixed(6))
@@ -389,7 +393,7 @@ export function PostTaskPage() {
     setFormError('')
     setBusy(true)
     try {
-      await createTask({
+      const created = await createTask({
         categoryId,
         title: title.trim(),
         description: description.trim(),
@@ -407,7 +411,9 @@ export function PostTaskPage() {
         imageUrls: images.map((img) => img.publicUrl).filter((url): url is string => !!url),
       })
       useToastStore.getState().pushToast('success', 'Đăng việc thành công.')
-      navigate('/viec-cua-toi')
+      // Hoi Poster co muon xem Tasker gợi ý ngay khong (yeu cau nguoi dung) thay vi tu dong
+      // dieu huong thang ve /viec-cua-toi - dialog hien qua createdTaskId, xem JSX cuoi file.
+      setCreatedTaskId(created.id)
     } catch (error) {
       const fieldErrors = error instanceof ApiError && error.details && typeof error.details === 'object'
         ? error.details as Record<string, string>
@@ -461,15 +467,6 @@ export function PostTaskPage() {
               error={!!errors.description}
             />
           </Field>
-
-          <AISuggestion
-            label="Gợi ý từ AI"
-            value="Sửa chữa điện nước · 400.000 – 600.000 ₫"
-            confidence={82}
-          >
-            Minh hoạ giao diện — tính năng tự gợi ý danh mục và khoảng giá từ mô tả sẽ được bổ
-            sung khi module AI hoàn thành. Hiện tại bạn tự chọn danh mục và ngân sách bên dưới.
-          </AISuggestion>
 
           <Field label="Nhóm dịch vụ" required error={errors.categoryId}>
             <Select
@@ -777,12 +774,6 @@ export function PostTaskPage() {
             )
           })()}
 
-          <Alert tone="info" title="Gợi ý AI hoạt động thế nào">
-            Mô hình sẽ đọc mô tả của bạn để đoán danh mục và khoảng giá thị trường. Nó không tự đăng
-            việc, không tự chọn Tasker, và không đàm phán giá. Khối minh hoạ ở trên là giao diện xem
-            trước, module AI thật sẽ được bổ sung ở giai đoạn sau.
-          </Alert>
-
           <Card padding="var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
             <div className="flex items-center justify-between gap-2">
               <div className="tc-label">Chọn vị trí trên bản đồ</div>
@@ -823,6 +814,32 @@ export function PostTaskPage() {
           onPrev={lightbox.prev}
           onGoTo={lightbox.goTo}
         />
+      )}
+
+      {createdTaskId && (
+        <DialogViewport>
+          <Dialog
+            title="Đăng việc thành công"
+            subtitle="Bạn có muốn xem ngay danh sách Tasker được AI gợi ý cho việc này không?"
+            onClose={() => navigate('/viec-cua-toi')}
+            style={{ maxWidth: 480 }}
+          >
+            <div className="flex flex-col gap-4">
+              <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                AI đã có thể xếp hạng sẵn những Tasker phù hợp nhất (khoảng cách, giá, lịch rảnh)
+                cho việc bạn vừa đăng — bạn có thể mời trực tiếp thay vì chờ Tasker tự ứng tuyển.
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <Button icon="sparkles" onClick={() => navigate(`/goi-y-tasker/${createdTaskId}`)}>
+                  Xem Tasker gợi ý ngay
+                </Button>
+                <Button variant="secondary" onClick={() => navigate('/viec-cua-toi')}>
+                  Để sau, về Việc của tôi
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+        </DialogViewport>
       )}
     </AppShell>
   )

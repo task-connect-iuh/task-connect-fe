@@ -16,6 +16,7 @@ import { PublicProfilePage } from '../pages/PublicProfilePage.tsx'
 import { RegisterPage } from '../pages/RegisterPage.tsx'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage.tsx'
 import { TaskCandidatesPage } from '../pages/TaskCandidatesPage.tsx'
+import { SuggestedTaskersPage } from '../pages/SuggestedTaskersPage.tsx'
 import { TaskerFeedPage } from '../pages/TaskerFeedPage.tsx'
 import { TaskerJobDetailPage } from '../pages/TaskerJobDetailPage.tsx'
 import { TaskerSkillsPage } from '../pages/TaskerSkillsPage.tsx'
@@ -108,6 +109,22 @@ function App() {
           element={(
             <RoleGuard allow={['poster']}>
               <TaskCandidatesPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/goi-y-tasker"
+          element={(
+            <RoleGuard allow={['poster']}>
+              <SuggestedTaskersPage />
+            </RoleGuard>
+          )}
+        />
+        <Route
+          path="/goi-y-tasker/:taskId"
+          element={(
+            <RoleGuard allow={['poster']}>
+              <SuggestedTaskersPage />
             </RoleGuard>
           )}
         />

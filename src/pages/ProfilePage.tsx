@@ -38,7 +38,7 @@ import { DAY_LABELS, DAY_OPTIONS, DAY_SHORT_LABELS } from '../utils/dayOfWeek.ts
 import { formatDate } from '../utils/formatDate.ts'
 import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
 import { reverseGeocode } from '../utils/geocoding.ts'
-import type { AddressSuggestion } from '../utils/geocoding.ts'
+import type { ResolvedAddress } from '../utils/geocoding.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
 
 // Nhan/icon trang thai KYC cho khoi "Xac minh danh tinh" - trung voi cac trang Admin (vd
@@ -560,7 +560,7 @@ export function ProfilePage() {
    * Viet Nam (xem utils/geocoding.ts), nen luon la lua chon hop le. resetSignal van tang de
    * ep LocationPickerMap chay lai effect dong bo ke ca khi toa do trung gia tri cu.
    */
-  const applySuggestion = (suggestion: AddressSuggestion) => {
+  const applySuggestion = (suggestion: ResolvedAddress) => {
     setGeocodeError('')
     setLocationLat(suggestion.lat.toFixed(6))
     setLocationLng(suggestion.lng.toFixed(6))

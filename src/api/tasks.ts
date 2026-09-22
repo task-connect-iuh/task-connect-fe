@@ -187,6 +187,8 @@ export interface MyApplicationResponse {
   taskTitle: string
   taskDescription: string
   taskAddressText: string
+  taskLat: number
+  taskLng: number
   taskLocationType: LocationType | null
   taskArrivalNotes: string | null
   taskSuppliesStatus: SuppliesStatus

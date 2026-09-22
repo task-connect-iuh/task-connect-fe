@@ -119,6 +119,10 @@ interface ApplicantsPanelProps {
  * chua tao Booking that, xem docs/TASK-MODULE-SPLIT.md). Chi hien khi task dang OPEN (con
  * nhan ung tuyen) hoac ASSIGNED (de xem lai ai da duoc chon). Sau khi xac nhan thanh cong, goi
  * onConfirmed() de MyTasksPage refetch danh sach cong viec (Task chuyen ASSIGNED) va dong dialog.
+ * Hien truc tiep trong TaskDetailDialog ben duoi, khong con boc trong Tabs - "Tasker gợi ý"
+ * (SuggestedTaskersPanel) da tach ra trang rieng (xem SuggestedTaskersPage.tsx), khong con
+ * la 1 tab canh Ung vien nua (yeu cau nguoi dung: file mockup goc dat "Tasker gợi ý" ngang
+ * hang voi cac muc nav chinh, khong phai tab phu trong dialog).
  */
 function ApplicantsPanel({ task, onConfirmed }: ApplicantsPanelProps) {
   const navigate = useNavigate()
@@ -155,8 +159,7 @@ function ApplicantsPanel({ task, onConfirmed }: ApplicantsPanelProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3" style={{ paddingTop: 'var(--sp-2)', borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
-      <div className="tc-label">Ứng viên</div>
+    <div className="flex flex-col gap-3">
       {loadError && <Alert tone="danger" title="Không tải được dữ liệu">{loadError}</Alert>}
       {applicants == null && !loadError && (
         <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Đang tải…</p>
@@ -211,9 +214,18 @@ interface TaskDetailDialogProps {
   onApplicantConfirmed: () => void
 }
 
-/** Xem chi tiet 1 cong viec da dang - dung lai du lieu da co san tu getMyTasks(), khong goi rieng GET /tasks/{id}. Anh chi hien khi bam nut "Xem ảnh" (khong hien san thumbnail) - mo ImageLightbox dang gallery, duyet qua lai bang next/prev, cham trang, hoac vuot trai/phai. Voi task OPEN/ASSIGNED, them ApplicantsPanel de Poster xem/xac nhan ung vien (UC11). Loai dia diem/luu y/tinh trang vat tu (2026-09-14) hien bang DataRow, an han khi null/rong (tru "Tinh trang vat tu" - luon bat buoc co gia tri). */
+/**
+ * Xem chi tiet 1 cong viec da dang - dung lai du lieu da co san tu getMyTasks(), khong goi
+ * rieng GET /tasks/{id}. Anh chi hien khi bam nut "Xem ảnh" (khong hien san thumbnail) - mo
+ * ImageLightbox dang gallery, duyet qua lai bang next/prev, cham trang, hoac vuot trai/phai.
+ * Voi task OPEN/ASSIGNED, hien ApplicantsPanel (UC11) + 1 nut rieng "Tasker gợi ý" dan sang
+ * trang SuggestedTaskersPage.tsx (route /goi-y-tasker/:taskId) - KHONG con nhung
+ * SuggestedTaskersPanel truc tiep trong dialog nay (da tach thanh trang rieng, xem Javadoc
+ * SuggestedTaskersPage.tsx ve ly do). Export vi InboxPage.tsx dung lai dialog nay.
+ */
 export function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDetailDialogProps) {
   useLockBodyScroll(true)
+  const navigate = useNavigate()
   const lightbox = useImageLightbox()
   const step = lifecycleStepFor(task.status)
 
@@ -252,7 +264,20 @@ export function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDe
             <DataRow label="Đăng lúc" value={formatDateTime(task.createdAt)} />
 
             {(task.status === 'OPEN' || task.status === 'ASSIGNED') && (
-              <ApplicantsPanel task={task} onConfirmed={() => { onApplicantConfirmed(); onClose() }} />
+              <div className="flex flex-col gap-3" style={{ paddingTop: 'var(--sp-2)', borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <strong style={{ fontSize: 'var(--fs-body)' }}>Ứng viên</strong>
+                  {task.status === 'OPEN' && (
+                    <Button
+                      size="sm" variant="secondary" icon="sparkles"
+                      onClick={() => navigate(`/goi-y-tasker/${task.id}`)}
+                    >
+                      Tasker gợi ý
+                    </Button>
+                  )}
+                </div>
+                <ApplicantsPanel task={task} onConfirmed={() => { onApplicantConfirmed(); onClose() }} />
+              </div>
             )}
           </div>
         </div>
