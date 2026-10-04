@@ -243,7 +243,10 @@ export function KycPage() {
     if (!frontFile) nextErrors.front = 'Tải ảnh mặt trước.'
     if (!backFile) nextErrors.back = 'Tải ảnh mặt sau.'
     setFieldErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0 || !frontFile || !backFile || !gender) return
+    if (Object.keys(nextErrors).length > 0 || !frontFile || !backFile || !gender) {
+      useToastStore.getState().pushToast('danger', 'Vui lòng điền đầy đủ thông tin bắt buộc.')
+      return
+    }
 
     const normalizedFullName = toTitleCase(fullNameOnId)
     setFormError('')

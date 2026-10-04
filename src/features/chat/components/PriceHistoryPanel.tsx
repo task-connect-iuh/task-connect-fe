@@ -43,7 +43,10 @@ export function PriceHistoryPanel({ applicationId }: PriceHistoryPanelProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      className="flex flex-col gap-3"
+      style={{ maxHeight: '65vh', overflowY: 'auto', paddingRight: 'var(--sp-1)' }}
+    >
       {entries.map((entry) => (
         <Card key={entry.id} padding="var(--sp-4)">
           <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: 'var(--sp-2)' }}>

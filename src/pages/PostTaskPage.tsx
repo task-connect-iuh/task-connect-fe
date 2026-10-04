@@ -29,6 +29,10 @@ import type { ResolvedAddress } from '../utils/geocoding.ts'
 import { LOCATION_TYPE_OPTIONS } from '../utils/locationType.ts'
 import { SUPPLIES_STATUS_OPTIONS } from '../utils/suppliesStatus.ts'
 import { uploadFileToPresignedUrl } from '../utils/s3Upload.ts'
+import {
+  BUDGET_MAX_THOUSAND, BUDGET_MIN_THOUSAND, BUDGET_RANGE_MESSAGE,
+  buildScheduledAtIso, formatThousandVnd, formatVnd, tomorrowDateString,
+} from '../utils/taskForm.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 
@@ -44,44 +48,6 @@ const DEFAULT_ESTIMATED_WORKERS_NEEDED = 1
 // so tien o rail ben phai, khong phai tinh toan that. Tinh toan escrow that (khi module
 // Payment ton tai) phai doc tu admin.system_parameters, khong hardcode - xem 02-source-of-truth.md.
 const PLATFORM_FEE_RATE = 0.08
-// Bien do ngan sach Poster duoc phep dat, don vi NGHIN dong (o nhap nhan don vi nghin - go "50"
-// nghia la 50.000 d, cung kieu nhap voi o gia tham khao cua Tasker o TaskerSkillsPage.tsx).
-// Nguong nghiep vu chot cung nguoi dung 2026-09-16: 100.000 d den 50.000.000 d - khop @Min/@Max
-// tren budgetAmount ben BE (CreateTaskRequest.java). De trong van hop le ("thoa thuan").
-const BUDGET_MIN_THOUSAND = 100
-const BUDGET_MAX_THOUSAND = 50_000
-const BUDGET_RANGE_MESSAGE = `Ngân sách phải từ ${(BUDGET_MIN_THOUSAND * 1000).toLocaleString('vi-VN')} đ đến ${(BUDGET_MAX_THOUSAND * 1000).toLocaleString('vi-VN')} đ.`
-
-function formatVnd(amount: number) {
-  return `${amount.toLocaleString('vi-VN')} đ`
-}
-
-/** Chuoi so nguyen nguoi dung nhap (don vi nghin dong) -> chuoi tien VND day du, vd "50" -> "50.000 đ". Rong hoac khong phai so tra ve rong. Cung cach lam voi formatThousandVnd() o TaskerSkillsPage.tsx. */
-function formatThousandVnd(digitsInThousand: string) {
-  const n = Number(digitsInThousand)
-  if (!digitsInThousand || Number.isNaN(n)) return ''
-  return formatVnd(n * 1000)
-}
-
-/** Ngay mai theo gio dia phuong trinh duyet, dang "yyyy-mm-dd" - dung lam min cho lich chon
- *  "Thoi gian mong muon" (phai sau hom nay, khong duoc chon dung hom nay), cung mau
- *  tomorrowDateString() da co o TaskerSkillsPage.tsx. */
-function tomorrowDateString() {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-/**
- * Ghep ngay ("yyyy-mm-dd") + gio ("HH:mm") thanh chuoi Instant ISO-8601 hop le (co giay va
- * "Z") de BE Instant.parse() doc duoc - vd "2026-10-15T09:00:00.000Z". new Date(...) hieu
- * "yyyy-mm-ddTHH:mm" la gio dia phuong trinh duyet (dung, vi nguoi dung chon gio theo gio
- * cua ho), toISOString() tu quy doi sang UTC. Rong neu chua chon ngay - scheduledAt tuy chon.
- */
-function buildScheduledAtIso(date: string, time: string): string | undefined {
-  if (!date) return undefined
-  return new Date(`${date}T${time}:00`).toISOString()
-}
 
 interface PendingImage {
   // Ten duy nhat tren client de lam key/xoa - khong lien quan gi den id tren BE.
@@ -388,7 +354,10 @@ export function PostTaskPage() {
       }
     }
     setErrors(nextErrors)
-    if (Object.values(nextErrors).some(Boolean)) return
+    if (Object.values(nextErrors).some(Boolean)) {
+      useToastStore.getState().pushToast('danger', 'Vui lòng điền đầy đủ thông tin bắt buộc.')
+      return
+    }
 
     setFormError('')
     setBusy(true)

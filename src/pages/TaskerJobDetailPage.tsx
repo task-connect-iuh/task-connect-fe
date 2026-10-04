@@ -9,9 +9,11 @@ import { DataRow } from '@ds/components/marketplace/DataRow'
 import { EmptyState } from '@ds/components/feedback/EmptyState'
 import { Field } from '@ds/components/forms/Field'
 import { Icon } from '@ds/components/core/Icon'
+import { Input } from '@ds/components/forms/Input'
 import { KycStatus } from '@ds/components/marketplace/KycStatus'
 import { LifecycleTracker } from '@ds/components/marketplace/LifecycleTracker'
 import { MoneyAmount } from '@ds/components/marketplace/MoneyAmount'
+import { Radio } from '@ds/components/forms/Radio'
 import { Textarea } from '@ds/components/forms/Textarea'
 import { AppShell } from '../components/AppShell.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
@@ -23,6 +25,7 @@ import { ApiError } from '../api/client.ts'
 import { toKycStatusState, useTaskerEligibility } from '../features/tasker/useTaskerEligibility.ts'
 import { LOCATION_TYPE_LABELS } from '../utils/locationType.ts'
 import { SUPPLIES_STATUS_LABELS } from '../utils/suppliesStatus.ts'
+import { BUDGET_MAX_THOUSAND, BUDGET_MIN_THOUSAND, BUDGET_RANGE_MESSAGE, formatThousandVnd } from '../utils/taskForm.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useToastStore } from '../stores/useToastStore.ts'
 
@@ -51,8 +54,13 @@ interface RequirementRow {
  * Chi tiet 1 viec + form gui ung tuyen (UC10) - Tasker. Viec goi that qua getFeedTask() (module
  * Task, khong con la findMockFeedJob - xem docs/TASK-MODULE-SPLIT.md), yeu cau chung chi va
  * trang thai KYC cung la DU LIEU THAT (listCertificateRequirements, getMyCertifications,
- * useTaskerEligibility). Theo yeu cau nguoi dung: BO o "Gia ban de xuat" VA o "Thoi gian ban co
- * the toi" (form chi con "Loi nhan ngan"). Dieu kien chung chi la OR, khong phai AND - chi can
+ * useTaskerEligibility). "Thoi gian ban co the toi" (proposedArrivalText) van BO khoi form (yeu
+ * cau nguoi dung truoc do). "Gia ban de xuat" da BO truoc do, THEM LAI 2026-09-30 (yeu cau nguoi
+ * dung) duoi dang 2 lua chon o "Muc tien ban nhan": chap nhan nguyen gia/thoa thuan sau (mac
+ * dinh, KHONG gui proposedPrice) hoac "De nghi mot muc khac" (bat buoc nhap ca gia va ly do,
+ * priceProposalValid chan nut Gui ung tuyen neu thieu 1 trong 2 - BE con chan lai lan nua qua
+ * PRICE_REASON_REQUIRED). Lua chon nay CHI ap dung cho Gui ung tuyen - "Nhan tin hoi them"
+ * (handleInquire) giu nguyen khong doi. Dieu kien chung chi la OR, khong phai AND - chi can
  * DUYET 1 TRONG SO cac chung chi yeu cau cho danh muc nay la du dieu kien (khong bat buoc co du
  * tat ca), va chan nut Gui ung tuyen khi KYC chua VERIFIED. Nut "Xem ho so nguoi dang" van
  * disabled - khong phai vi thieu accountId that nua
@@ -72,9 +80,24 @@ export function TaskerJobDetailPage() {
   const [myCertifications, setMyCertifications] = useState<CertificationDetailResponse[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [message, setMessage] = useState('')
+  // "Muc tien ban nhan" (2026-09-30) - mac dinh 'accept' (nguyen gia nguoi dang ghi, hoac thoa
+  // thuan sau neu budgetAmount null), KHONG gui proposedPrice/priceReason. 'propose' bat buoc
+  // ca proposedPrice va priceReason (xem priceProposalValid), CHI anh huong Gui ung tuyen -
+  // Nhan tin hoi them (handleInquire) khong doc 2 state nay. proposedPrice nhap theo DON VI
+  // NGHIN dong (giong budget cua PostTaskPage.tsx/EditTaskDialog.tsx - go "50" nghia la
+  // 50.000 d, xem formatThousandVnd/BUDGET_MIN_THOUSAND/BUDGET_MAX_THOUSAND o utils/taskForm.ts),
+  // nhan 1000 luc gui request de khop don vi dong nguyen ben BE.
+  const [priceChoice, setPriceChoice] = useState<'accept' | 'propose'>('accept')
+  const [proposedPrice, setProposedPrice] = useState('')
+  const [priceReason, setPriceReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [inquiring, setInquiring] = useState(false)
+  // true = vua phat hien Poster sua thong tin cong viec (UC07) ngay truoc luc gui ung tuyen/hoi
+  // them - banner dang hien, job da duoc cap nhat gia tri moi nhat. Lan bam nut KE TIEP se gui
+  // thang (khong kiem tra lai) vi Tasker da thay du lieu moi truoc khi quyet dinh tiep tuc -
+  // canh bao NHE (khong chan cung), xem Javadoc refreshAndCheckStale().
+  const [staleNotice, setStaleNotice] = useState(false)
 
   useEffect(() => {
     if (!jobId) { setJob(null); return }
@@ -125,9 +148,70 @@ export function TaskerJobDetailPage() {
   const certsReady = requirements != null && myCertifications != null
   const canApply = certsReady && kycVerified && hasRequiredCert
 
-  const handleApply = () => {
+  // "De nghi mot muc khac" bat buoc CA 2: gia trong khoang [BUDGET_MIN_THOUSAND,
+  // BUDGET_MAX_THOUSAND] va ly do khong rong (yeu cau nguoi dung 2026-09-30, hard block - khong
+  // cho gui thieu/sai 1 trong 2). proposedPriceThousand la don vi NGHIN dong nguoi dung go
+  // (giong budget cua PostTaskPage.tsx) - nhan 1000 luc gui request o handleApply(). Chon
+  // 'accept' luon hop le.
+  const proposedPriceThousand = Number(proposedPrice)
+  const proposedPriceOutOfRange = proposedPrice.trim() !== ''
+    && (Number.isNaN(proposedPriceThousand) || proposedPriceThousand < BUDGET_MIN_THOUSAND
+      || proposedPriceThousand > BUDGET_MAX_THOUSAND)
+  const priceProposalValid = priceChoice !== 'propose'
+    || (proposedPrice.trim() !== '' && !proposedPriceOutOfRange && priceReason.trim().length > 0)
+
+  // So 6 truong Poster sua duoc (UC07) giua ban dang hien thi (current) va ban vua tai lai
+  // (fresh) - dung truoc luc gui ung tuyen/hoi them, KHONG dung de hien thi thuong (chi goi luc
+  // bam nut). title/description/anh/addressText khoa cung vinh vien nen khong can so.
+  const hasEditableInfoChanged = (current: TaskFeedItemResponse, fresh: TaskFeedItemResponse): boolean => (
+    current.locationType !== fresh.locationType
+      || current.arrivalNotes !== fresh.arrivalNotes
+      || current.suppliesStatus !== fresh.suppliesStatus
+      || current.suppliesNote !== fresh.suppliesNote
+      || current.budgetAmount !== fresh.budgetAmount
+      || current.scheduledAt !== fresh.scheduledAt
+  )
+
+  /**
+   * Kiem tra ngam ngay TRUOC luc thuc su gui ung tuyen/hoi them - Poster co the vua sua thong
+   * tin (UC07) sau khi Tasker mo trang nay, ma trang khong tu dong lam moi (getFeedTask() chi
+   * goi 1 lan luc mount). Canh bao NHE (theo yeu cau nguoi dung, khong chan cung): neu phat
+   * hien khac, cap nhat lai "job" ve gia tri moi nhat + hien banner roi DUNG LAI (chua gui) -
+   * Tasker xem lai thong tin moi rong bam nut (Ung tuyen hoac Hoi them, doc lap voi nhau) mot
+   * lan nua moi thuc su gui: luc do "job" da la gia tri moi nhat nen lan kiem tra ke tiep se tu
+   * thay khong con khac biet va cho qua - KHONG dung co bypass rieng, tranh truong hop bam nut
+   * A bi canh bao roi bam nut B lai bo qua kiem tra vi con "nho" trang thai cua nut A. Task
+   * khong con OPEN nua (da bi giao/huy) thi coi nhu khong con tim thay, dong bo voi cach !job
+   * hien EmptyState o tren. Loi mang khac (khong phai TASK_NOT_FOUND) thi khong chan - de request
+   * gui thuc su quyet dinh, BE van la nguon xac nhan cuoi cung.
+   */
+  const refreshAndCheckStale = async (): Promise<boolean> => {
+    try {
+      const fresh = await getFeedTask(job.id)
+      if (hasEditableInfoChanged(job, fresh)) {
+        setJob(fresh)
+        setStaleNotice(true)
+        return false
+      }
+      setStaleNotice(false)
+      return true
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'TSK-404-TASK_NOT_FOUND') {
+        setJob(null)
+        return false
+      }
+      return true
+    }
+  }
+
+  const handleApply = async () => {
+    if (!(await refreshAndCheckStale())) return
     setSubmitting(true)
-    applyToTask(job.id, { message: message || undefined })
+    applyToTask(job.id, {
+      message: message || undefined,
+      proposedPrice: priceChoice === 'propose' ? proposedPriceThousand * 1000 : undefined,
+      priceReason: priceChoice === 'propose' ? priceReason.trim() : undefined,
+    })
       .then(() => {
         setSubmitted(true)
         useToastStore.getState().pushToast('success', 'Đã gửi ứng tuyển. Chờ người đăng xác nhận.')
@@ -141,7 +225,8 @@ export function TaskerJobDetailPage() {
   // "Hoi them" (INQUIRING) dung chung dieu kien VERIFIED voi "Gui ung tuyen" (canApply) - Tasker
   // phai co chung chi phu hop danh muc nay moi duoc mo kenh chat hoi truoc, khong rieng dieu
   // kien nao khac (UC16 muc 2). Thanh cong thi dieu huong thang sang khung chat vua mo.
-  const handleInquire = () => {
+  const handleInquire = async () => {
+    if (!(await refreshAndCheckStale())) return
     setInquiring(true)
     createInquiry(job.id, message.trim())
       .then((application) => {
@@ -228,6 +313,72 @@ export function TaskerJobDetailPage() {
               </Alert>
             )}
 
+            {staleNotice && (
+              <Alert tone="warning" title="Thông tin công việc vừa được cập nhật">
+                Người đăng vừa sửa lại một số thông tin — trang đã tự tải lại nội dung mới nhất ở trên. Xem lại rồi bấm nút bên dưới một lần nữa nếu bạn vẫn muốn tiếp tục.
+              </Alert>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <div className="tc-label">Mức tiền bạn nhận</div>
+              <Card
+                tone={priceChoice === 'accept' ? 'brand' : 'plain'} interactive padding="var(--sp-4)"
+                style={{ cursor: submitted ? 'default' : 'pointer' }}
+                onClick={() => !submitted && setPriceChoice('accept')}
+              >
+                <Radio
+                  name="price-choice" value="accept" checked={priceChoice === 'accept'} disabled={submitted}
+                  onChange={() => setPriceChoice('accept')}
+                  label={job.budgetAmount != null ? `Nhận đúng ${formatVnd(job.budgetAmount)} như người đăng ghi` : 'Thoả thuận giá sau'}
+                  description={job.budgetAmount != null
+                    ? 'Không cần lý do. Người đăng chọn bạn là giá chốt ngay.'
+                    : 'Trao đổi giá phù hợp với người đăng sau khi ứng tuyển.'}
+                />
+              </Card>
+              <Card
+                tone={priceChoice === 'propose' ? 'brand' : 'plain'} interactive padding="var(--sp-4)"
+                style={{ cursor: submitted ? 'default' : 'pointer' }}
+                onClick={() => !submitted && setPriceChoice('propose')}
+              >
+                <Radio
+                  name="price-choice" value="propose" checked={priceChoice === 'propose'} disabled={submitted}
+                  onChange={() => setPriceChoice('propose')}
+                  label="Đề nghị một mức khác"
+                  description="Không giới hạn mức đề nghị, nhưng bắt buộc kèm lý do — người đăng thấy cả hai con số và lý do của bạn."
+                />
+              </Card>
+            </div>
+
+            {priceChoice === 'propose' && (
+              <div className="flex gap-3 flex-wrap">
+                <Field
+                  label="Mức bạn đề nghị"
+                  hint="Nhập theo đơn vị nghìn đồng — vd nhập 50 nghĩa là 50.000 đ."
+                  error={proposedPriceOutOfRange ? BUDGET_RANGE_MESSAGE : undefined}
+                  style={{ flex: 1, minWidth: 160 }}
+                >
+                  <Input
+                    numeric inputMode="numeric"
+                    suffix={proposedPrice ? formatThousandVnd(proposedPrice) : 'nghìn đ'}
+                    value={proposedPrice}
+                    onChange={(e) => setProposedPrice(e.target.value.replace(/\D/g, ''))}
+                    disabled={submitted}
+                    error={proposedPriceOutOfRange}
+                  />
+                </Field>
+                <Field
+                  label="Lý do đề nghị khác mức người đăng ghi"
+                  hint="Bắt buộc. Lý do này được lưu vào lịch sử giá của công việc."
+                  style={{ flex: 2, minWidth: 260 }}
+                >
+                  <Textarea
+                    rows={2} placeholder="Vòi gắn tường phải tháo cả cụm, mất thêm khoảng 1 tiếng…"
+                    value={priceReason} onChange={(e) => setPriceReason(e.target.value)} disabled={submitted}
+                  />
+                </Field>
+              </div>
+            )}
+
             <Field label="Lời nhắn ngắn" hint="Nói rõ kinh nghiệm liên quan và cách bạn xử lý — hoặc nêu câu hỏi nếu muốn hỏi thêm trước.">
               <Textarea rows={3} placeholder="Tôi làm điện nước 6 năm, có thể tới đúng giờ…" value={message} onChange={(e) => setMessage(e.target.value)} disabled={submitted} />
             </Field>
@@ -235,8 +386,8 @@ export function TaskerJobDetailPage() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <Button
                 size="lg" icon={submitted ? 'check' : 'send'}
-                disabled={!canApply || submitting || inquiring || submitted}
-                onClick={handleApply}
+                disabled={!canApply || submitting || inquiring || submitted || !priceProposalValid}
+                onClick={() => void handleApply()}
               >
                 {submitted ? 'Đã gửi ứng tuyển' : submitting ? 'Đang gửi…' : 'Gửi ứng tuyển'}
               </Button>
@@ -244,7 +395,7 @@ export function TaskerJobDetailPage() {
                 variant="secondary" size="lg" icon="message-square"
                 disabled={!canApply || submitting || inquiring || submitted || message.trim().length === 0}
                 title={!canApply ? 'Cần đủ điều kiện chứng chỉ như khi ứng tuyển mới hỏi thêm được' : message.trim().length === 0 ? 'Nhập câu hỏi trước khi gửi' : undefined}
-                onClick={handleInquire}
+                onClick={() => void handleInquire()}
               >
                 {inquiring ? 'Đang gửi…' : 'Nhắn tin hỏi thêm'}
               </Button>

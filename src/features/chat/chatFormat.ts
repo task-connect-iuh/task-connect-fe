@@ -3,9 +3,11 @@
 // kieu cu o MyTasksPage.tsx/TaskerJobsPage.tsx (dung "đ" chu va toLocaleString day du), vi day
 // la khu vuc code moi nen bam sat dung quy uoc thay vi lap lai cach cu.
 
-/** "450.000 ₫". */
+/** "450.000 ₫" - khoang trang giua so va "₫" la NBSP (non-breaking space, ma U+00A0) de
+ * khong bao gio bi tach so va don vi tien ra 2 dong rieng trong cac khung hep (dialog chon
+ * phuong thuc thanh toan, Radio label...). */
 export function formatVnd(amount: number): string {
-  return `${amount.toLocaleString('vi-VN')} ₫`
+  return `${amount.toLocaleString('vi-VN')} ₫`
 }
 
 /**

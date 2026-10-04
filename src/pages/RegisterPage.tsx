@@ -15,6 +15,7 @@ import { finishLoginAndRedirect } from '../features/auth/postLoginRedirect.ts'
 import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
 import { suggestEmailDomain } from '../utils/emailSuggestion.ts'
 import { toTitleCase } from '../utils/formatName.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/
@@ -101,7 +102,10 @@ export function RegisterPage() {
   const handleSubmit = async () => {
     setFormError('')
     setEmailExists(false)
-    if (!validate()) return
+    if (!validate()) {
+      useToastStore.getState().pushToast('danger', 'Vui lòng điền đầy đủ thông tin bắt buộc.')
+      return
+    }
 
     const normalizedName = toTitleCase(name)
     setBusy(true)

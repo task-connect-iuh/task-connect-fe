@@ -58,7 +58,16 @@ export function RescheduleProposalCard({ message, viewerAccountId, busy, onAccep
               </>
             )}
             {mine && (
-              <Button variant="ghost" size="sm" icon="undo-2" disabled={busy} onClick={onWithdraw}>Thu hồi</Button>
+              /* Ghost mac dinh border trong suot, tren nen brand-tint cua the de xuat thi nut gan
+                 nhu vo hinh - to mau border bang --brand cho khop khung the va noi ro nut (cung
+                 mau voi PriceProposalCard.tsx, doi --amber-400 sang --brand cho khop tong mau the). */
+              <Button
+                variant="ghost" size="sm" icon="undo-2"
+                style={{ borderColor: 'var(--brand)' }}
+                disabled={busy} onClick={onWithdraw}
+              >
+                Thu hồi
+              </Button>
             )}
           </div>
         )}

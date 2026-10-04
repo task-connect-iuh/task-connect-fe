@@ -7,6 +7,7 @@ import { PasswordInput } from '../features/auth/PasswordInput.tsx'
 import { resetPassword } from '../api/auth.ts'
 import { ApiError } from '../api/client.ts'
 import { submitOnEnter } from '../features/auth/submitOnEnter.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 
 interface ResetLocationState {
   email: string
@@ -43,7 +44,10 @@ export function ResetPasswordPage() {
     if (!confirmPassword) nextErrors.confirm = 'Nhập lại mật khẩu.'
     else if (confirmPassword !== newPassword) nextErrors.confirm = 'Hai mật khẩu chưa khớp nhau.'
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
+    if (Object.keys(nextErrors).length > 0) {
+      useToastStore.getState().pushToast('danger', 'Vui lòng điền đầy đủ thông tin bắt buộc.')
+      return
+    }
 
     setFormError('')
     setBusy(true)

@@ -29,7 +29,7 @@ import {
   updateAvailabilitySlot,
   updateMyProfile,
 } from '../api/users.ts'
-import type { AvailabilitySlotResponse, KycStatus, KycStatusResponse, LocationType, ProfileResponse, ServiceCategoryResponse, TaskerSkillResponse } from '../api/users.ts'
+import type { AvailabilityMode, AvailabilitySlotResponse, KycStatus, KycStatusResponse, LocationType, ProfileResponse, ServiceCategoryResponse, TaskerSkillResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
 import { useAuthStore } from '../stores/useAuthStore.ts'
 import { useProfileStore } from '../stores/useProfileStore.ts'
@@ -198,6 +198,13 @@ export function ProfilePage() {
   const [posterBusy, setPosterBusy] = useState(false)
   const [posterError, setPosterError] = useState('')
 
+  // Che do lich lam viec: FLEXIBLE (gio linh hoat, khoa phan khai bao khung gio ben duoi) hoac
+  // CUSTOM (tu chon khung gio, hanh vi cu). Rong '' = chua khai bao (tai khoan cu), xu ly
+  // giong CUSTOM khi render de khong doi trai nghiem nguoi dung cu.
+  const [availabilityMode, setAvailabilityMode] = useState<AvailabilityMode | ''>('')
+  const [availabilityModeBusy, setAvailabilityModeBusy] = useState(false)
+  const [availabilityModeError, setAvailabilityModeError] = useState('')
+
   // Lich lam viec - CRUD day du, chuyen nguyen logic tu TaskerSkillsPage.tsx.
   const [slots, setSlots] = useState<AvailabilitySlotResponse[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
@@ -228,6 +235,7 @@ export function ProfilePage() {
     setJobCategoryIds(new Set(profile.jobCategoryIds))
     setLocationType(profile.locationType ?? '')
     setArrivalNotes(profile.arrivalNotes ?? '')
+    setAvailabilityMode(profile.availabilityMode ?? '')
     setKycStatus(profile.kycStatus)
     setLastProfile(profile)
     // Dong bo sang store dung chung de AppShell hien dung avatar/ten tren thanh tren ngay,
@@ -331,6 +339,26 @@ export function ProfilePage() {
       setRadiusError(error instanceof ApiError ? error.message : 'Không lưu được bán kính làm việc. Kiểm tra mạng rồi thử lại.')
     } finally {
       setRadiusBusy(false)
+    }
+  }
+
+  /**
+   * Doi che do lich lam viec (FLEXIBLE/CUSTOM) - luu ngay (PATCH mot phan), cung mau
+   * handleRadiusChange. Khong xoa Khung gio ranh da khai khi chuyen sang FLEXIBLE, chi an
+   * phan CRUD o UI (xem render ben duoi) - du lieu hien lai neu chuyen ve CUSTOM.
+   */
+  const handleAvailabilityModeChange = async (mode: AvailabilityMode) => {
+    if (mode === availabilityMode) return
+    setAvailabilityModeError('')
+    setAvailabilityModeBusy(true)
+    try {
+      const updated = await updateMyProfile({ availabilityMode: mode })
+      applyProfile(updated)
+      useToastStore.getState().pushToast('success', mode === 'FLEXIBLE' ? 'Đã bật giờ linh hoạt.' : 'Đã chuyển sang tự chọn khung giờ.')
+    } catch (error) {
+      setAvailabilityModeError(error instanceof ApiError ? error.message : 'Không lưu được lịch làm việc. Kiểm tra mạng rồi thử lại.')
+    } finally {
+      setAvailabilityModeBusy(false)
     }
   }
 
@@ -620,7 +648,10 @@ export function ProfilePage() {
     if (!nextErrors.address && !addressText.trim()) nextErrors.address = 'Chọn địa chỉ.'
     setFieldErrors(nextErrors)
 
-    if (nextErrors.fullName || nextErrors.operatingArea || nextErrors.address) return
+    if (nextErrors.fullName || nextErrors.operatingArea || nextErrors.address) {
+      useToastStore.getState().pushToast('danger', 'Vui lòng điền đầy đủ thông tin bắt buộc.')
+      return
+    }
 
     setFormError('')
     setBusy(true)
@@ -648,9 +679,27 @@ export function ProfilePage() {
 
   const categoryNameById = new Map(categories.map((c) => [c.id, c.name]))
   const verifiedSkills = skills.filter((skill) => skill.verificationStatus === 'VERIFIED')
-  // Rail ben phai chi xuat hien khi co gi de hien: the ban do luc dang sua, hoac khoi "Xac
-  // minh danh tinh" cho Tasker - khac editMode (chi rieng the ban do), phai tinh gop ca 2.
-  const hasSidebar = editMode || (showTaskerPanel && !!kycStatus)
+
+  // Cac truong AI dung de ghep viec cho Tasker (dia chi/khu vuc/ban kinh/lich lam viec) -
+  // rieng voi 3 truong bat buoc de LUU ho so (fullName/operatingArea/address, xem handleSubmit)
+  // vi ban kinh va lich lam viec khong bi chan luc luu, nguoi dung co the bo trong vo thoi han.
+  // Lich lam viec coi la "thieu" khi chua chon che do (rong '') hoac chon CUSTOM ma chua khai
+  // khung gio nao - FLEXIBLE khong can khung gio nen luon coi la du.
+  const scheduleMissing = availabilityMode === '' || (availabilityMode === 'CUSTOM' && slots.length === 0)
+  const taskerMatchingMissingFields = showTaskerPanel
+    ? [
+        !addressText.trim() && 'Địa chỉ',
+        !operatingArea.trim() && 'Khu vực hoạt động',
+        !preferredRadiusKm && 'Bán kính làm việc ưu tiên',
+        scheduleMissing && 'Lịch làm việc',
+      ].filter((label): label is string => Boolean(label))
+    : []
+  const showTaskerMatchingAlert = showTaskerPanel && !isNewProfile && !slotsLoading && taskerMatchingMissingFields.length > 0
+
+  // Rail ben phai chi xuat hien khi co gi de hien: the ban do luc dang sua, khoi "Xac minh
+  // danh tinh" hoac khoi "Hoan thien ho so de AI ghep viec" cho Tasker - khac editMode (chi
+  // rieng the ban do), phai tinh gop ca 3.
+  const hasSidebar = editMode || (showTaskerPanel && (!!kycStatus || showTaskerMatchingAlert))
 
   return (
     <AppShell navValue="profile" title="Hồ sơ cá nhân" subtitle="Thông tin này hiển thị khi bạn đăng việc hoặc nhận việc">
@@ -819,7 +868,11 @@ export function ProfilePage() {
                             {busy ? 'Đang lưu…' : 'Lưu thay đổi'}
                           </Button>
                           {!isNewProfile && (
-                            <Button variant="ghost" size="lg" disabled={busy} onClick={handleCancelEdit}>
+                            // Ghost + vien trung tinh de tach khoi chu thuong, dong bo cach lam voi nut "Lich su gia" o TaskCandidatesPage.tsx
+                            <Button
+                              variant="ghost" size="lg" disabled={busy} onClick={handleCancelEdit}
+                              style={{ border: 'var(--bw) solid var(--border)' }}
+                            >
                               Huỷ
                             </Button>
                           )}
@@ -948,62 +1001,80 @@ export function ProfilePage() {
 
                   <div style={{ borderTop: 'var(--bw-hair) solid var(--border-subtle)' }} />
 
-                  <div className="tc-label">Khung giờ rảnh</div>
-                  {slotError && <Alert tone="danger" title="Không thực hiện được">{slotError}</Alert>}
-
-                  {!slotsLoading && slots.length === 0
-                    ? <EmptyState icon="calendar-clock" title="Chưa khai báo khung giờ nào">Thêm khung giờ rảnh để Poster biết khi nào bạn nhận việc.</EmptyState>
-                    : (
-                        <div className="flex flex-col gap-2">
-                          {slots.map((slot) => (
-                            <div key={slot.id} className="flex items-center gap-3 py-2 flex-wrap" style={{ borderBottom: 'var(--bw-hair) solid var(--border-subtle)' }}>
-                              {editingSlotId === slot.id
-                                ? (
-                                    <>
-                                      <Select style={{ width: 140 }} value={editDay} onChange={(e) => setEditDay(e.target.value)} disabled={slotBusy} options={DAY_OPTIONS} />
-                                      <TimeSelect value={editStart} onChange={setEditStart} disabled={slotBusy} />
-                                      <span style={{ color: 'var(--text-muted)' }}>–</span>
-                                      <TimeSelect value={editEnd} onChange={setEditEnd} disabled={slotBusy} />
-                                      <Button variant="primary" size="sm" icon="check" disabled={slotBusy} onClick={() => void handleSaveEditSlot()}>Lưu</Button>
-                                      <Button variant="ghost" size="sm" onClick={() => setEditingSlotId(null)} disabled={slotBusy}>Huỷ</Button>
-                                    </>
-                                  )
-                                : (
-                                    <>
-                                      <Badge tone="brand">{DAY_LABELS[slot.dayOfWeek]}</Badge>
-                                      <span className="tc-num flex-1">{slot.startTime.slice(0, 5)} – {slot.endTime.slice(0, 5)}</span>
-                                      <Button variant="ghost" size="sm" icon="pencil" disabled={slotBusy} onClick={() => startEditSlot(slot)}>Sửa</Button>
-                                      <Button variant="ghost" size="sm" icon="trash-2" disabled={slotBusy} onClick={() => void handleDeleteSlot(slot.id)}>Xoá</Button>
-                                    </>
-                                  )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                  <div className="flex flex-col gap-3 pt-2" style={{ borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
-                    <Field label="Ngày" hint="Chọn một hoặc nhiều ngày cùng lúc, vd Thứ 2 đến Thứ 6">
-                      <div className="flex gap-2 flex-wrap">
-                        {DAY_OPTIONS.map(({ value }) => {
-                          const day = Number(value)
-                          return (
-                            <Chip key={day} selected={selectedDays.has(day)} onClick={() => !slotBusy && toggleSlotDay(day)}>
-                              {DAY_SHORT_LABELS[day]}
-                            </Chip>
-                          )
-                        })}
-                      </div>
-                    </Field>
-                    <div className="flex gap-3 items-end flex-wrap">
-                      <Field label="Bắt đầu">
-                        <TimeSelect value={slotStart} onChange={setSlotStart} disabled={slotBusy} />
-                      </Field>
-                      <Field label="Kết thúc">
-                        <TimeSelect value={slotEnd} onChange={setSlotEnd} disabled={slotBusy} />
-                      </Field>
-                      <Button variant="secondary" icon="plus" disabled={slotBusy} onClick={() => void handleAddSlot()}>Thêm khung giờ</Button>
+                  <Field label="Lịch làm việc" hint="Giờ linh hoạt: nhận việc bất cứ lúc nào, không cần khai khung giờ cụ thể.">
+                    <div className="flex gap-2 flex-wrap">
+                      <Chip selected={availabilityMode === 'FLEXIBLE'} onClick={() => !availabilityModeBusy && void handleAvailabilityModeChange('FLEXIBLE')}>Giờ linh hoạt</Chip>
+                      <Chip selected={availabilityMode !== 'FLEXIBLE'} onClick={() => !availabilityModeBusy && void handleAvailabilityModeChange('CUSTOM')}>Tự chọn khung giờ</Chip>
                     </div>
-                  </div>
+                  </Field>
+                  {availabilityModeError && <Alert tone="danger" title="Không thực hiện được">{availabilityModeError}</Alert>}
+
+                  {availabilityMode === 'FLEXIBLE'
+                    ? (
+                        <Alert tone="info" icon="calendar-clock" title="Đang bật giờ linh hoạt">
+                          Bạn có thể nhận việc bất cứ lúc nào, không cần khai khung giờ cụ thể. Chuyển sang "Tự chọn khung giờ" để khai báo lịch rảnh.
+                        </Alert>
+                      )
+                    : (
+                        <>
+                          <div className="tc-label">Khung giờ rảnh</div>
+                          {slotError && <Alert tone="danger" title="Không thực hiện được">{slotError}</Alert>}
+
+                          {!slotsLoading && slots.length === 0
+                            ? <EmptyState icon="calendar-clock" title="Chưa khai báo khung giờ nào">Thêm khung giờ rảnh để Poster biết khi nào bạn nhận việc.</EmptyState>
+                            : (
+                                <div className="flex flex-col gap-2">
+                                  {slots.map((slot) => (
+                                    <div key={slot.id} className="flex items-center gap-3 py-2 flex-wrap" style={{ borderBottom: 'var(--bw-hair) solid var(--border-subtle)' }}>
+                                      {editingSlotId === slot.id
+                                        ? (
+                                            <>
+                                              <Select style={{ width: 140 }} value={editDay} onChange={(e) => setEditDay(e.target.value)} disabled={slotBusy} options={DAY_OPTIONS} />
+                                              <TimeSelect value={editStart} onChange={setEditStart} disabled={slotBusy} />
+                                              <span style={{ color: 'var(--text-muted)' }}>–</span>
+                                              <TimeSelect value={editEnd} onChange={setEditEnd} disabled={slotBusy} />
+                                              <Button variant="primary" size="sm" icon="check" disabled={slotBusy} onClick={() => void handleSaveEditSlot()}>Lưu</Button>
+                                              <Button variant="ghost" size="sm" onClick={() => setEditingSlotId(null)} disabled={slotBusy}>Huỷ</Button>
+                                            </>
+                                          )
+                                        : (
+                                            <>
+                                              <Badge tone="brand">{DAY_LABELS[slot.dayOfWeek]}</Badge>
+                                              <span className="tc-num flex-1">{slot.startTime.slice(0, 5)} – {slot.endTime.slice(0, 5)}</span>
+                                              <Button variant="ghost" size="sm" icon="pencil" disabled={slotBusy} onClick={() => startEditSlot(slot)}>Sửa</Button>
+                                              <Button variant="ghost" size="sm" icon="trash-2" disabled={slotBusy} onClick={() => void handleDeleteSlot(slot.id)}>Xoá</Button>
+                                            </>
+                                          )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                          <div className="flex flex-col gap-3 pt-2" style={{ borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
+                            <Field label="Ngày" hint="Chọn một hoặc nhiều ngày cùng lúc, vd Thứ 2 đến Thứ 6">
+                              <div className="flex gap-2 flex-wrap">
+                                {DAY_OPTIONS.map(({ value }) => {
+                                  const day = Number(value)
+                                  return (
+                                    <Chip key={day} selected={selectedDays.has(day)} onClick={() => !slotBusy && toggleSlotDay(day)}>
+                                      {DAY_SHORT_LABELS[day]}
+                                    </Chip>
+                                  )
+                                })}
+                              </div>
+                            </Field>
+                            <div className="flex gap-3 items-end flex-wrap">
+                              <Field label="Bắt đầu">
+                                <TimeSelect value={slotStart} onChange={setSlotStart} disabled={slotBusy} />
+                              </Field>
+                              <Field label="Kết thúc">
+                                <TimeSelect value={slotEnd} onChange={setSlotEnd} disabled={slotBusy} />
+                              </Field>
+                              <Button variant="secondary" icon="plus" disabled={slotBusy} onClick={() => void handleAddSlot()}>Thêm khung giờ</Button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                 </Card>
               )}
 
@@ -1037,6 +1108,17 @@ export function ProfilePage() {
                     )}
                   >
                     {kycStatusDescription(kycStatus, kycDetail)}
+                  </Alert>
+                )}
+
+                {showTaskerMatchingAlert && (
+                  <Alert
+                    tone="warning"
+                    icon="sparkles"
+                    title="Hoàn thiện hồ sơ để AI ghép việc phù hợp hơn"
+                    style={{ border: 'var(--bw) solid var(--border)' }}
+                  >
+                    Còn thiếu: {taskerMatchingMissingFields.join(', ')}. Khai báo đầy đủ giúp hệ thống AI gợi ý việc phù hợp hơn khi Poster đăng việc.
                   </Alert>
                 )}
 

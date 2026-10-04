@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert } from '@ds/components/feedback/Alert'
-import { Avatar } from '@ds/components/core/Avatar'
 import { Badge } from '@ds/components/core/Badge'
 import { Button } from '@ds/components/core/Button'
 import { Card } from '@ds/components/core/Card'
@@ -15,14 +14,29 @@ import { Tabs } from '@ds/components/navigation/Tabs'
 import { AppShell } from '../components/AppShell.tsx'
 import { DialogViewport } from '../components/DialogViewport.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
-import { confirmApplication, getMyTasks, getTaskApplicants, rejectApplication } from '../api/tasks.ts'
-import type { TaskApplicationResponse, TaskResponse, TaskStatus } from '../api/tasks.ts'
+import {
+  approveExtraCostBatch,
+  getExtraCostSummary,
+  getMyTasks,
+  rejectExtraCostBatch,
+  topUpExtraCostEscrow,
+  withdrawExtraCostBatch,
+} from '../api/tasks.ts'
+import type { ExtraCostMoneySummaryResponse, TaskResponse, TaskStatus } from '../api/tasks.ts'
 import { ApiError } from '../api/client.ts'
+import { useToastStore } from '../stores/useToastStore.ts'
 import { LOCATION_TYPE_LABELS } from '../utils/locationType.ts'
 import { SUPPLIES_STATUS_LABELS } from '../utils/suppliesStatus.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
 import { useLockBodyScroll } from '../utils/useLockBodyScroll.ts'
-import { useToastStore } from '../stores/useToastStore.ts'
+import { CancelTaskDialog } from '../features/tasks/components/CancelTaskDialog.tsx'
+import { EditTaskDialog } from '../features/tasks/components/EditTaskDialog.tsx'
+import { ExtraCostBreakdownCard } from '../features/tasks/components/ExtraCostBreakdownCard.tsx'
+
+// Task con sua/huy duoc theo UC07 - khop POSTER_EDITABLE_STATUSES ben BE (TaskService.java).
+function isPosterEditable(status: TaskStatus): boolean {
+  return status === 'OPEN' || status === 'PENDING_REVIEW'
+}
 
 // Nhan rieng cho TaskStatus (khac vocabulary cua StatusPill - component do chi danh cho
 // trang thai booking/thanh toan, xem StatusPill.jsx "Never invent labels outside this map").
@@ -33,7 +47,7 @@ const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   COMPLETED: 'Hoàn tất',
   CLOSED: 'Đã đóng',
   CANCELLED: 'Đã huỷ',
-  REJECTED: 'Bị từ chối',
+  REJECTED: 'Bị admin từ chối',
 }
 const TASK_STATUS_TONE: Record<TaskStatus, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
   PENDING_REVIEW: 'warning',
@@ -81,153 +95,46 @@ function formatWeekdayTime(iso: string) {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${time}`
 }
 
-// Nhan/tone rieng cho trang thai don ung tuyen - cung nguyen tac voi TASK_STATUS_LABEL (khong
-// dung vocabulary StatusPill). Mo rong tu 4 len 10 gia tri o Round B0-B6 module Chat -
-// xem TaskApplicationStatus trong api/tasks.ts.
-const APPLICATION_STATUS_LABEL: Record<TaskApplicationResponse['status'], string> = {
-  PENDING: 'Chờ bạn xác nhận',
-  ACCEPTED: 'Đã xác nhận',
-  NEEDS_RECONFIRM: 'Cần ứng tuyển lại',
-  REJECTED: 'Đã từ chối',
-  INQUIRING: 'Đang hỏi thêm',
-  INVITED: 'Đã mời, chờ phản hồi',
-  WITHDRAWN: 'Đã rút ứng tuyển',
-  REJECTED_AUTO: 'Đã giao người khác',
-  DECLINED: 'Đã từ chối lời mời',
-  INVITE_EXPIRED: 'Lời mời đã hết hạn',
-}
-const APPLICATION_STATUS_TONE: Record<TaskApplicationResponse['status'], 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
-  PENDING: 'info',
-  ACCEPTED: 'success',
-  NEEDS_RECONFIRM: 'warning',
-  REJECTED: 'neutral',
-  INQUIRING: 'info',
-  INVITED: 'warning',
-  WITHDRAWN: 'neutral',
-  REJECTED_AUTO: 'neutral',
-  DECLINED: 'danger',
-  INVITE_EXPIRED: 'neutral',
-}
-
-interface ApplicantsPanelProps {
-  task: TaskResponse
-  onConfirmed: () => void
-}
-
-/**
- * Danh sach ung vien cua 1 cong viec + nut xac nhan/tu choi (UC11, gioi han doi trang thai -
- * chua tao Booking that, xem docs/TASK-MODULE-SPLIT.md). Chi hien khi task dang OPEN (con
- * nhan ung tuyen) hoac ASSIGNED (de xem lai ai da duoc chon). Sau khi xac nhan thanh cong, goi
- * onConfirmed() de MyTasksPage refetch danh sach cong viec (Task chuyen ASSIGNED) va dong dialog.
- * Hien truc tiep trong TaskDetailDialog ben duoi, khong con boc trong Tabs - "Tasker gợi ý"
- * (SuggestedTaskersPanel) da tach ra trang rieng (xem SuggestedTaskersPage.tsx), khong con
- * la 1 tab canh Ung vien nua (yeu cau nguoi dung: file mockup goc dat "Tasker gợi ý" ngang
- * hang voi cac muc nav chinh, khong phai tab phu trong dialog).
- */
-function ApplicantsPanel({ task, onConfirmed }: ApplicantsPanelProps) {
-  const navigate = useNavigate()
-  const [applicants, setApplicants] = useState<TaskApplicationResponse[] | null>(null)
-  const [loadError, setLoadError] = useState('')
-  const [processingId, setProcessingId] = useState<string | null>(null)
-
-  useEffect(() => {
-    getTaskApplicants(task.id)
-      .then(setApplicants)
-      .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Không tải được danh sách ứng viên.'))
-  }, [task.id])
-
-  const handleConfirm = (applicationId: string) => {
-    setProcessingId(applicationId)
-    confirmApplication(task.id, applicationId)
-      .then(() => {
-        useToastStore.getState().pushToast('success', 'Đã xác nhận Tasker cho công việc này.')
-        onConfirmed()
-      })
-      .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Xác nhận thất bại, thử lại sau.'))
-      .finally(() => setProcessingId(null))
-  }
-
-  const handleReject = (applicationId: string) => {
-    setProcessingId(applicationId)
-    rejectApplication(task.id, applicationId)
-      .then((updated) => {
-        setApplicants((prev) => prev?.map((a) => (a.id === updated.id ? updated : a)) ?? null)
-        useToastStore.getState().pushToast('success', 'Đã từ chối ứng viên này.')
-      })
-      .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Từ chối thất bại, thử lại sau.'))
-      .finally(() => setProcessingId(null))
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {loadError && <Alert tone="danger" title="Không tải được dữ liệu">{loadError}</Alert>}
-      {applicants == null && !loadError && (
-        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Đang tải…</p>
-      )}
-      {applicants != null && applicants.length === 0 && (
-        <EmptyState icon="user-search" title="Chưa có ai ứng tuyển" />
-      )}
-      {applicants?.map((applicant) => (
-        <Card key={applicant.id} padding="var(--sp-4)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-          <div className="flex items-center gap-3">
-            <Avatar name={applicant.taskerName ?? 'Tasker'} src={applicant.taskerAvatarUrl ?? undefined} size={36} />
-            <div className="flex-1">
-              <strong style={{ fontSize: 'var(--fs-body)' }}>{applicant.taskerName ?? 'Tasker'}</strong>
-            </div>
-            <Badge tone={APPLICATION_STATUS_TONE[applicant.status]}>{APPLICATION_STATUS_LABEL[applicant.status]}</Badge>
-          </div>
-          {applicant.message && (
-            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--text-body)', lineHeight: 1.5 }}>{applicant.message}</p>
-          )}
-          <div className="flex items-center gap-2" style={{ marginTop: 'var(--sp-1)' }}>
-            {applicant.status === 'PENDING' && task.status === 'OPEN' && (
-              <>
-                <Button size="sm" icon="check" disabled={processingId != null} onClick={() => handleConfirm(applicant.id)}>
-                  {processingId === applicant.id ? 'Đang xử lý…' : 'Xác nhận'}
-                </Button>
-                <Button variant="secondary" size="sm" icon="x" disabled={processingId != null} onClick={() => handleReject(applicant.id)}>
-                  Từ chối
-                </Button>
-              </>
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="message-square"
-              style={{ marginLeft: 'auto' }}
-              onClick={() => navigate(`/tin-nhan/${applicant.id}`, {
-                state: { counterpartName: applicant.taskerName, counterpartAvatarUrl: applicant.taskerAvatarUrl },
-              })}
-            >
-              Nhắn tin
-            </Button>
-          </div>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
 interface TaskDetailDialogProps {
   task: TaskResponse
   onClose: () => void
-  onApplicantConfirmed: () => void
 }
 
 /**
  * Xem chi tiet 1 cong viec da dang - dung lai du lieu da co san tu getMyTasks(), khong goi
  * rieng GET /tasks/{id}. Anh chi hien khi bam nut "Xem ảnh" (khong hien san thumbnail) - mo
  * ImageLightbox dang gallery, duyet qua lai bang next/prev, cham trang, hoac vuot trai/phai.
- * Voi task OPEN/ASSIGNED, hien ApplicantsPanel (UC11) + 1 nut rieng "Tasker gợi ý" dan sang
- * trang SuggestedTaskersPage.tsx (route /goi-y-tasker/:taskId) - KHONG con nhung
- * SuggestedTaskersPanel truc tiep trong dialog nay (da tach thanh trang rieng, xem Javadoc
- * SuggestedTaskersPage.tsx ve ly do). Export vi InboxPage.tsx dung lai dialog nay.
+ * Khong con hien danh sach ung vien/"Tasker gợi ý" trong dialog nay nua - ca 2 da chuyen ra
+ * ngoai TaskRow (nut "Ứng viên" + "Tasker gợi ý" o footer card danh sach, xem
+ * TaskRow ben duoi) de Poster thao tac truc tiep tu danh sach thay vi phai mo modal nay truoc
+ * (yeu cau nguoi dung). Export vi InboxPage.tsx dung lai dialog nay.
  */
-export function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDetailDialogProps) {
+export function TaskDetailDialog({ task, onClose }: TaskDetailDialogProps) {
   useLockBodyScroll(true)
   const navigate = useNavigate()
   const lightbox = useImageLightbox()
   const step = lifecycleStepFor(task.status)
+
+  // Chi phi phat sinh (quyet dinh nguoi dung 2026-10-02) - tai qua winningApplicationId (chi co
+  // gia tri khi task.status === ASSIGNED, xem Javadoc BE TaskResponse.winningApplicationId). Man
+  // nay la goc nhin Poster co dinh (khac InboxPage.tsx phai tu tinh viewerRole tu kenh dang mo).
+  const [extraCostSummary, setExtraCostSummary] = useState<ExtraCostMoneySummaryResponse | null>(null)
+  const [extraCostActionBusyId, setExtraCostActionBusyId] = useState<string | null>(null)
+
+  const refreshExtraCostSummary = () => {
+    if (!task.winningApplicationId) { setExtraCostSummary(null); return }
+    getExtraCostSummary(task.winningApplicationId).then(setExtraCostSummary).catch(() => setExtraCostSummary(null))
+  }
+
+  useEffect(refreshExtraCostSummary, [task.winningApplicationId])
+
+  const runExtraCostAction = (batchId: string, action: Promise<ExtraCostMoneySummaryResponse>, failMessage: string) => {
+    setExtraCostActionBusyId(batchId)
+    action
+      .then(setExtraCostSummary)
+      .catch((error) => useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : failMessage))
+      .finally(() => setExtraCostActionBusyId(null))
+  }
 
   return (
     <DialogViewport>
@@ -235,6 +142,10 @@ export function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDe
         <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 'var(--sp-1)' }}>
           <div className="flex flex-col gap-4">
             <Badge tone={TASK_STATUS_TONE[task.status]}>{TASK_STATUS_LABEL[task.status]}</Badge>
+
+            {task.status === 'REJECTED' && task.rejectionReason && (
+              <Alert tone="danger" title="Lý do công việc bị từ chối">{task.rejectionReason}</Alert>
+            )}
 
             {step != null && (
               <div style={{ overflowX: 'auto', padding: 'var(--sp-2) 0' }}>
@@ -259,25 +170,22 @@ export function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDe
             {task.arrivalNotes && <DataRow label="Lưu ý khi tới nơi" value={task.arrivalNotes} />}
             <DataRow label="Tình trạng vật tư" value={SUPPLIES_STATUS_LABELS[task.suppliesStatus]} />
             {task.suppliesNote && <DataRow label="Mô tả thêm về vật tư" value={task.suppliesNote} />}
-            <DataRow label="Ngân sách" value={formatBudget(task.budgetAmount)} numeric />
+            <DataRow label={task.budgetAmount != null ? 'Ngân sách ban đầu' : 'Ngân sách'} value={formatBudget(task.budgetAmount)} numeric />
             <DataRow label="Thời gian mong muốn" value={task.scheduledAt ? formatDateTime(task.scheduledAt) : 'Chưa xác định'} />
             <DataRow label="Đăng lúc" value={formatDateTime(task.createdAt)} />
 
-            {(task.status === 'OPEN' || task.status === 'ASSIGNED') && (
-              <div className="flex flex-col gap-3" style={{ paddingTop: 'var(--sp-2)', borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <strong style={{ fontSize: 'var(--fs-body)' }}>Ứng viên</strong>
-                  {task.status === 'OPEN' && (
-                    <Button
-                      size="sm" variant="secondary" icon="sparkles"
-                      onClick={() => navigate(`/goi-y-tasker/${task.id}`)}
-                    >
-                      Tasker gợi ý
-                    </Button>
-                  )}
-                </div>
-                <ApplicantsPanel task={task} onConfirmed={() => { onApplicantConfirmed(); onClose() }} />
-              </div>
+            {extraCostSummary && task.winningApplicationId && (
+              <ExtraCostBreakdownCard
+                summary={extraCostSummary}
+                viewerRole="POSTER"
+                topUpBusy={extraCostActionBusyId === 'top-up'}
+                actionBusyBatchId={extraCostActionBusyId}
+                onViewPendingInChat={() => { onClose(); navigate(`/tin-nhan/${task.winningApplicationId}`) }}
+                onTopUp={() => runExtraCostAction('top-up', topUpExtraCostEscrow(task.winningApplicationId!), 'Nạp thêm thất bại, thử lại sau.')}
+                onApprove={(batchId) => runExtraCostAction(batchId, approveExtraCostBatch(task.winningApplicationId!, batchId), 'Thao tác thất bại, thử lại sau.')}
+                onReject={(batchId) => runExtraCostAction(batchId, rejectExtraCostBatch(task.winningApplicationId!, batchId), 'Thao tác thất bại, thử lại sau.')}
+                onWithdraw={(batchId) => runExtraCostAction(batchId, withdrawExtraCostBatch(task.winningApplicationId!, batchId), 'Thu hồi thất bại, thử lại sau.')}
+              />
             )}
           </div>
         </div>
@@ -306,18 +214,23 @@ export function TaskDetailDialog({ task, onClose, onApplicantConfirmed }: TaskDe
 interface TaskRowProps {
   task: TaskResponse
   onOpenDetail: () => void
-  onOpenGallery: (startIndex: number) => void
+  onEdit: () => void
+  onCancel: () => void
 }
 
 /** Mot dong cong viec trong danh sach - phong theo bo cuc JobListRow (@ds) nhung tu ve rieng
  * vi JobListRow.status dung vocabulary cua StatusPill (booking/thanh toan), khong khop
  * TaskStatus that cua module Task - xem comment o TASK_STATUS_LABEL. */
-function TaskRow({ task, onOpenDetail, onOpenGallery }: TaskRowProps) {
+function TaskRow({ task, onOpenDetail, onEdit, onCancel }: TaskRowProps) {
   const navigate = useNavigate()
   const step = lifecycleStepFor(task.status)
 
   return (
-    <Card padding="var(--sp-4) var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+    <Card
+      tone={task.status === 'REJECTED' ? 'sunken' : 'plain'}
+      padding="var(--sp-4) var(--sp-5)"
+      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}
+    >
       <div className="flex gap-4 items-start">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="flex items-center gap-2 flex-wrap">
@@ -337,7 +250,7 @@ function TaskRow({ task, onOpenDetail, onOpenGallery }: TaskRowProps) {
         </div>
         <div style={{ flex: '0 0 auto' }}>
           {task.budgetAmount != null
-            ? <MoneyAmount value={task.budgetAmount} size="md" label="Ngân sách" />
+            ? <MoneyAmount value={task.budgetAmount} size="md" label="Ngân sách ban đầu" style={{ alignItems: 'flex-end' }} />
             : (
                 <div className="flex flex-col" style={{ alignItems: 'flex-end' }}>
                   <span className="tc-label" style={{ fontSize: 'var(--fs-label)' }}>Ngân sách</span>
@@ -354,22 +267,24 @@ function TaskRow({ task, onOpenDetail, onOpenGallery }: TaskRowProps) {
       )}
 
       <div className="flex items-center gap-3" style={{ paddingTop: 'var(--sp-3)', borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
-        {task.imageUrls.length > 0 ? (
-          <Button variant="secondary" size="sm" icon="image" onClick={() => onOpenGallery(0)}>
-            Xem ảnh ({task.imageUrls.length})
-          </Button>
-        ) : (
-          <span className="flex items-center gap-1" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-faint)' }}>
-            <Icon name="image-off" size={15} />Không có ảnh
-          </span>
-        )}
-        {task.status === 'OPEN' && (
+        {(task.status === 'OPEN' || task.status === 'ASSIGNED') && (
           <Button variant="secondary" size="sm" icon="users" onClick={() => navigate(`/viec-cua-toi/${task.id}/ung-vien`)}>
-            Ứng viên & chốt giá
+            Ứng viên
           </Button>
         )}
-        <div style={{ marginLeft: 'auto' }}>
-          <Button variant="secondary" size="sm" icon="eye" onClick={onOpenDetail}>Xem chi tiết</Button>
+        {isPosterEditable(task.status) && (
+          <>
+            <Button variant="secondary" size="sm" icon="pencil" onClick={onEdit}>Sửa</Button>
+            <Button variant="danger" size="sm" icon="trash-2" onClick={onCancel}>Huỷ</Button>
+          </>
+        )}
+        <div className="flex items-center gap-3" style={{ marginLeft: 'auto' }}>
+          {task.status === 'OPEN' && (
+            <Button variant="secondary" size="sm" icon="sparkles" onClick={() => navigate(`/goi-y-tasker/${task.id}`)}>
+              Tasker gợi ý
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" icon="eye" onClick={onOpenDetail}>Chi tiết</Button>
         </div>
       </div>
     </Card>
@@ -385,8 +300,9 @@ type TaskTab = 'needsAction' | 'running' | 'done' | 'all'
  * GET /tasks/mine da co (khong can API moi - moi field can dung deu da co san trong
  * TaskResponse). "Tien cua ban trong tuan" va o thong ke "Thanh toan" la BAN XEM TRUOC GIAO
  * DIEN, chua co du lieu that vi module Payment chua ton tai - ghi ro trong UI, khong am tham
- * gia vo da hoat dong (cung nguyen tac da ap dung o PostTaskPage.tsx). Chua co UC07 (sua/huy)
- * hay UC08 (lich su chuyen trang thai chi tiet) - xem docs/PROGRESS-TASK-POSTER-MODULE.md.
+ * gia vo da hoat dong (cung nguyen tac da ap dung o PostTaskPage.tsx). Da co UC07 (sua/huy,
+ * xem nut "Sửa"/"Huỷ việc" tren TaskRow + EditTaskDialog/CancelTaskDialog) - chua co UC08
+ * (lich su chuyen trang thai chi tiet), xem docs/PROGRESS-TASK-POSTER-MODULE.md.
  * Chi role TASK_POSTER vao duoc (RoleGuard o App.tsx).
  */
 export function MyTasksPage() {
@@ -394,8 +310,9 @@ export function MyTasksPage() {
   const [tasks, setTasks] = useState<TaskResponse[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [detailTask, setDetailTask] = useState<TaskResponse | null>(null)
+  const [editTask, setEditTask] = useState<TaskResponse | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<TaskResponse | null>(null)
   const [tab, setTab] = useState<TaskTab>('needsAction')
-  const rowLightbox = useImageLightbox()
 
   const refresh = () => {
     getMyTasks()
@@ -474,7 +391,8 @@ export function MyTasksPage() {
                 key={task.id}
                 task={task}
                 onOpenDetail={() => setDetailTask(task)}
-                onOpenGallery={(startIndex) => rowLightbox.open(task.imageUrls, startIndex)}
+                onEdit={() => setEditTask(task)}
+                onCancel={() => setCancelTarget(task)}
               />
             ))}
             {tasks && shown.length === 0 && (
@@ -517,24 +435,13 @@ export function MyTasksPage() {
       </div>
 
       {detailTask && (
-        <TaskDetailDialog task={detailTask} onClose={() => setDetailTask(null)} onApplicantConfirmed={refresh} />
+        <TaskDetailDialog task={detailTask} onClose={() => setDetailTask(null)} />
       )}
-
-      {rowLightbox.viewerUrl && (
-        <ImageLightbox
-          url={rowLightbox.viewerUrl}
-          zoom={rowLightbox.viewerZoom}
-          rotation={rowLightbox.viewerRotation}
-          onClose={rowLightbox.close}
-          onZoomIn={rowLightbox.zoomIn}
-          onZoomOut={rowLightbox.zoomOut}
-          onRotate={rowLightbox.rotate}
-          index={rowLightbox.index}
-          total={rowLightbox.total}
-          onNext={rowLightbox.next}
-          onPrev={rowLightbox.prev}
-          onGoTo={rowLightbox.goTo}
-        />
+      {editTask && (
+        <EditTaskDialog task={editTask} onClose={() => setEditTask(null)} onSaved={refresh} />
+      )}
+      {cancelTarget && (
+        <CancelTaskDialog task={cancelTarget} onClose={() => setCancelTarget(null)} onCancelled={refresh} />
       )}
     </AppShell>
   )

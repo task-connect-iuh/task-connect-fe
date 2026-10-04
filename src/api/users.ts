@@ -13,6 +13,8 @@ export type KycImageSide = 'FRONT' | 'BACK'
 // Khop vn.taskconnect.user.api.LocationType - Task Poster tu khai bao trong phan "Gioi
 // thieu ngan" tren ProfilePage.tsx, khong ap dung cho Tasker.
 export type LocationType = 'NHA_RIENG' | 'CAN_HO_CHUNG_CU' | 'CUA_HANG' | 'VAN_PHONG'
+// Khop vn.taskconnect.user.api.AvailabilityMode - che do lich lam viec Tasker tu khai bao.
+export type AvailabilityMode = 'FLEXIBLE' | 'CUSTOM'
 
 export interface ProfileResponse {
   accountId: string
@@ -32,6 +34,9 @@ export interface ProfileResponse {
   kycStatus: KycStatus
   email: string | null
   phone: string | null
+  // Che do lich lam viec Tasker tu khai (FLEXIBLE/CUSTOM) - null neu chua khai bao, xem
+  // V43__add_availability_mode_to_user_profiles.sql o backend.
+  availabilityMode: AvailabilityMode | null
 }
 
 // Mot nhom dich vu da VERIFIED, dung de hien badge "Da xac minh" tren ho so cong khai -
@@ -71,6 +76,7 @@ export interface UpdateProfilePayload {
   // undefined = khong gui field nay (giu nguyen), [] = xoa het lua chon cu - khac nhau ro
   // rang o body JSON, xem UpdateProfileRequest.java.
   jobCategoryIds?: string[]
+  availabilityMode?: AvailabilityMode
 }
 
 export interface AvatarUploadUrlResponse {
