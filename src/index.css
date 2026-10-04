@@ -106,3 +106,176 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* LatticeLoader.tsx - chi bao "dang xu ly" dang luoi cham sang, dung khi cho AiFacade tra ve
+   (goi y tu anh, goi y gia luc dang viec). Chuyen the tu component mo nguon "LatticeLoader"
+   (React Bits, class prefix doi "lattice-" -> "tc-lattice-" cho khop quy uoc du an) - mau doc
+   qua CSS custom property duoc component set inline (--ll-color, --ll-mark...), ban than component
+   truyen gia tri token DS vao do (var(--teal-600)/var(--success)/var(--danger)), KHONG hardcode
+   hex o day.
+
+   Ve rule "khong lap vo han" (20-design-system.md): animation ben duoi CHI chay khi
+   [data-status="working"] - dung dung luc dang cho 1 request that (xac nhan voi nguoi dung day
+   la ngoai le hop le, gan chat vong doi request chu khong phai decorative loop vo co). Khac ban
+   goc (React Bits) o mot diem: prefers-reduced-motion TAT HAN animation (dung tc-lattice-loader__cell
+   dung yen o idleOpacity) thay vi chi lam diu di nhung van lap - khop dung cach --dur-fast/--dur/
+   --dur-slow ve 0ms trong motion.css, nhat quan voi moi animation khac cua du an khi nguoi dung bat
+   "giam chuyen dong". */
+.tc-lattice-loader {
+  --ll-n: 3;
+  --ll-cell: 8px;
+  --ll-gap: 4px;
+  --ll-font: 13px;
+  --ll-color: var(--teal-600);
+  --ll-mark: var(--success);
+  --ll-idle: 0.15;
+  --ll-glow: var(--teal-600);
+  --ll-mark-glow: var(--success);
+  --ll-peak: 1;
+  --ll-cycle: 864ms;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--ll-font) * 0.625);
+  font-family: inherit;
+  font-size: var(--ll-font);
+  line-height: 1;
+  color: var(--ll-color);
+}
+
+.tc-lattice-loader__grid {
+  display: grid;
+  flex: none;
+}
+
+.tc-lattice-loader__layer {
+  grid-area: 1 / 1;
+  display: grid;
+  grid-template-columns: repeat(var(--ll-n), var(--ll-cell));
+  gap: var(--ll-gap);
+}
+
+.tc-lattice-loader__cell {
+  width: var(--ll-cell);
+  height: var(--ll-cell);
+  border-radius: max(1px, calc(var(--ll-cell) * 0.25));
+  background: var(--ll-color);
+  opacity: var(--ll-idle);
+}
+.tc-lattice-loader[data-shape='round'] .tc-lattice-loader__cell {
+  border-radius: 50%;
+}
+
+.tc-lattice-loader__run {
+  transition: opacity var(--dur) var(--ease);
+}
+.tc-lattice-loader__run .tc-lattice-loader__cell {
+  animation: tc-lattice-on var(--ll-cycle) var(--ease) infinite;
+}
+.tc-lattice-loader__run .tc-lattice-loader__cell[data-lit='45'] {
+  animation-name: tc-lattice-on-45;
+}
+.tc-lattice-loader__run .tc-lattice-loader__cell[data-lit='35'] {
+  animation-name: tc-lattice-on-35;
+}
+.tc-lattice-loader__run .tc-lattice-loader__cell[data-lit='25'] {
+  animation-name: tc-lattice-on-25;
+}
+.tc-lattice-loader__run .tc-lattice-loader__cell[data-hole] {
+  animation: none;
+  opacity: calc(var(--ll-idle) * 0.47);
+}
+
+.tc-lattice-loader__mark {
+  opacity: 0;
+  transform: scale(0.9);
+  transform-origin: center;
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.tc-lattice-loader__mark .tc-lattice-loader__cell {
+  transition: opacity var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.tc-lattice-loader__mark .tc-lattice-loader__cell[data-on] {
+  background: var(--ll-mark);
+  opacity: var(--ll-peak);
+}
+
+.tc-lattice-loader:not([data-status='working']) .tc-lattice-loader__run {
+  opacity: 0;
+}
+.tc-lattice-loader:not([data-status='working']) .tc-lattice-loader__run .tc-lattice-loader__cell {
+  animation-play-state: paused;
+}
+.tc-lattice-loader:not([data-status='working']) .tc-lattice-loader__mark {
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--dur) var(--ease), transform var(--dur-fast) var(--ease-out);
+}
+
+.tc-lattice-loader__label {
+  position: relative;
+  display: inline-block;
+  font-weight: var(--fw-medium);
+}
+.tc-lattice-loader__text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
+  opacity: 0;
+}
+.tc-lattice-loader__text[data-active] {
+  position: static;
+  opacity: 1;
+}
+
+.tc-lattice-loader__timer {
+  font-family: var(--font-mono);
+  font-size: calc(var(--ll-font) * 0.875);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+.tc-lattice-loader__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes tc-lattice-on {
+  0%, 100% { opacity: var(--ll-idle); }
+  18%, 42% { opacity: var(--ll-peak); }
+  62% { opacity: var(--ll-idle); }
+}
+@keyframes tc-lattice-on-45 {
+  0%, 100% { opacity: var(--ll-idle); }
+  13%, 31% { opacity: var(--ll-peak); }
+  45% { opacity: var(--ll-idle); }
+}
+@keyframes tc-lattice-on-35 {
+  0%, 100% { opacity: var(--ll-idle); }
+  10%, 24% { opacity: var(--ll-peak); }
+  35% { opacity: var(--ll-idle); }
+}
+@keyframes tc-lattice-on-25 {
+  0%, 100% { opacity: var(--ll-idle); }
+  7%, 17% { opacity: var(--ll-peak); }
+  25% { opacity: var(--ll-idle); }
+}
+
+/* Tat han (khong chi lam diu) khi nguoi dung bat "giam chuyen dong" - khop cach --dur-fast/
+   --dur/--dur-slow ve 0ms trong motion.css, khac ban goc React Bits (chi giam bien do/tang thoi
+   luong nhung van lap vo han). */
+@media (prefers-reduced-motion: reduce) {
+  .tc-lattice-loader__run .tc-lattice-loader__cell {
+    animation: none !important;
+    opacity: var(--ll-idle);
+  }
+}
