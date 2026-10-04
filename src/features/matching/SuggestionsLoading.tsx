@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Icon } from '@ds/components/core/Icon'
+import LatticeLoader from '../../components/LatticeLoader.tsx'
 
 // 3 buoc that cua pipeline goi y (TaskerMatchingService buoc 1+2, AiSuggestionService buoc 3 -
 // xem PROGRESS-AI-MATCHING-MODULE.md), KHONG phai copy trang tri bia dat - dung de Poster hieu
@@ -18,12 +18,14 @@ const STAGE_INTERVAL_MS = 900
 /**
  * Trang thai cho khi goi GET /tasks/{id}/suggested-taskers (SuggestedTaskersPanel.tsx) - thay
  * cho dong text "Dang tai goi y..." don gian truoc do (yeu cau nguoi dung: can 1 animation hop
- * ly thay vi text tinh). Radar icon TINH (khong quay/nhap nhay lien tuc) trong vong tron tint
- * teal nhac lai dung tu vung "radar = ghep viec" da co san trong Iconography cua Design
- * System; cam giac "dang xu ly" den tu viec cac dong trang thai lan luot xuat hien theo thoi
- * gian (moi dong 1 animation MOT LAN, xem tc-stage-reveal trong index.css), khong phai spinner
- * quay vo han - tuan thu dung guardrail "khong lap vo han, khong troi noi" cua
- * 20-design-system.md.
+ * ly thay vi text tinh). Doi tu vong tron + icon radar TINH sang LatticeLoader (yeu cau nguoi
+ * dung, 2026-09-29) - pattern "sweep" + dang tron (--shape="round") giu lai dung tinh than
+ * "radar quet" cua icon cu, kich thuoc (grid 4, o 12px) can bang voi vong tron 56px truoc do.
+ * LatticeLoader chi loop animation trong luc component nay con mount (status luon "working",
+ * unmount ngay khi co ket qua that) - cung ngoai le "gan voi vong doi 1 request that" da thong
+ * nhat voi nguoi dung cho component nay (xem LatticeLoader.tsx), khong phai decorative loop vo
+ * co ma 20-design-system.md cam. An label/timer rieng cua LatticeLoader (showTimer=false,
+ * label rong) vi cac dong trang thai STAGES ben duoi da du chi tiet, tranh trung lap.
  */
 export function SuggestionsLoading() {
   const [visibleCount, setVisibleCount] = useState(1)
@@ -42,20 +44,16 @@ export function SuggestionsLoading() {
         animation: 'tc-stage-reveal var(--dur-slow) var(--ease-out) both',
       }}
     >
-      <div
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 'var(--r-pill)',
-          background: 'var(--brand-tint-strong)',
-          border: 'var(--bw) solid var(--teal-300)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Icon name="radar" size={26} style={{ color: 'var(--brand-strong)' }} />
-      </div>
+      <LatticeLoader
+        status="working"
+        pattern="sweep"
+        grid={4}
+        shape="round"
+        cellSize={12}
+        gap={4}
+        label=""
+        showTimer={false}
+      />
 
       <div className="flex flex-col items-center gap-2" style={{ minHeight: STAGES.length * 24 }}>
         {STAGES.slice(0, visibleCount).map((stage, index) => {

@@ -15,12 +15,14 @@ import { Select } from '@ds/components/forms/Select'
 import { Textarea } from '@ds/components/forms/Textarea'
 import { AppShell } from '../components/AppShell.tsx'
 import { AddressAutocomplete } from '../components/AddressAutocomplete.tsx'
+import { ClarifyAssistantDialog } from '../components/ClarifyAssistantDialog.tsx'
 import { DialogViewport } from '../components/DialogViewport.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
+import LatticeLoader from '../components/LatticeLoader.tsx'
 import { LocationPickerMap } from '../components/LocationPickerMap.tsx'
 import { TimeSelect } from '../components/TimeSelect.tsx'
-import { createTask, createTaskImageUploadUrl } from '../api/tasks.ts'
-import type { SuppliesStatus } from '../api/tasks.ts'
+import { analyzeTaskImage, createTask, createTaskImageUploadUrl, suggestTaskPrice } from '../api/tasks.ts'
+import type { ClarifyingQuestionResponse, SuppliesStatus } from '../api/tasks.ts'
 import { addSavedAddress, deleteSavedAddress, getMyProfile, getMySavedAddresses, listServiceCategories } from '../api/users.ts'
 import type { LocationType, SavedAddressResponse, ServiceCategoryResponse } from '../api/users.ts'
 import { ApiError } from '../api/client.ts'
@@ -158,6 +160,12 @@ export function PostTaskPage() {
   const [scheduledDate, setScheduledDate] = useState('')
   const [scheduledTime, setScheduledTime] = useState('09:00')
   const [images, setImages] = useState<PendingImage[]>([])
+  // Dang goi POST /tasks/analyze-image cho anh dau tien da tai xong - chan bam lai nut trong
+  // luc cho, khong lien quan gi den uploadingCount (tai anh len S3 va phan tich la 2 buoc doc lap).
+  const [analyzingImage, setAnalyzingImage] = useState(false)
+  // null = modal "Hoi them" dang dong. Mo tu dong khi goi y tu anh khong du tin chon category
+  // nhung co cau hoi lam ro kem theo - xem handleAnalyzeImage/ClarifyAssistantDialog.tsx.
+  const [clarifyQuestions, setClarifyQuestions] = useState<ClarifyingQuestionResponse[] | null>(null)
   // Xac nhan "hieu cach tien tam giu hoat dong" - chan nut Dang viec, giong mau tham khao
   // (poster/PostJobScreen.jsx). Ban than viec dang cong viec dot nay CHUA giu tien that (chua
   // co Booking/Payment) - checkbox nay la buoc UX chuan bi truoc cho luc co escrow that.
@@ -365,6 +373,67 @@ export function PostTaskPage() {
     })
   }
 
+  /**
+   * Goi y dien form (tieu de/mo ta/danh muc/ngan sach) tu anh DAU TIEN da tai len S3 xong (co
+   * publicUrl, khong loi) - Poster xem va sua/xoa tuy y truoc khi bam "Dang việc", khong rang
+   * buoc gi. KHONG dong den thoi gian mong muon - anh khong the hien thi thu nay (quyet dinh
+   * da chot voi nguoi dung). Sau khi dien tieu de/mo ta/danh muc tu anh, GOI TIEP goi y gia
+   * (suggestTaskPrice) dua tren chinh noi dung vua dien - 2 buoc rieng o BE (AiFacade.
+   * suggestTaskFromImage khac AiFacade.embed) nhung gop lam MOT thao tac tren UI (yeu cau nguoi
+   * dung: "1 lan bam, dien ca title/description/category/gia"). available=false o buoc nao
+   * (het quota AI/loi mang, hoac chua du du lieu gia tuong tu) chi hien toast/bo qua truong do,
+   * khong chan Poster tiep tuc tu dien tay.
+   */
+  const handleAnalyzeImage = async () => {
+    const readyImage = images.find((img) => img.publicUrl && !img.uploading && !img.error)
+    if (!readyImage?.publicUrl) return
+    setAnalyzingImage(true)
+    try {
+      const result = await analyzeTaskImage(readyImage.publicUrl)
+      if (!result.available) {
+        useToastStore.getState().pushToast('danger', 'Không phân tích được ảnh lúc này, bạn tự nhập thông tin nhé.')
+        return
+      }
+      if (result.title) setTitle(result.title)
+      if (result.description) setDescription(result.description)
+      if (result.suggestedCategoryId) setCategoryId(result.suggestedCategoryId)
+      useToastStore.getState().pushToast('success', 'Đã điền gợi ý từ ảnh — kiểm tra lại trước khi đăng.')
+
+      // Co cau hoi lam ro la tin hieu DOC LAP voi suggestedCategoryId - mo ta co the da du de
+      // xac dinh category nhung van qua chung (vd chi mo ta hinh dang thiet bi, chua neu ro su
+      // co gi dang xay ra), giong bac si hoi them trieu chung du da biet benh nhan den vi khoa
+      // nao (xem ClarifyAssistantDialog.tsx, .claude/rules/15-ai-module.md "chuc nang 4"). Tu
+      // dong mo modal bat ke suggestedCategoryId co gia tri hay khong - khong chan gi ca, Poster
+      // bam "De sau" bat ky luc nao.
+      if (result.clarifyingQuestions.length > 0) {
+        setClarifyQuestions(result.clarifyingQuestions)
+      }
+
+      // Goi y gia dua tren chinh title/description/category vua dien (fallback ve gia tri dang
+      // co san tren form neu AI khong tra ve tung truong) - bo qua neu khong xac dinh duoc
+      // categoryId nao (ca AI lan Poster deu chua chon), khong the so sanh cheo category.
+      const priceTitle = result.title ?? title
+      const priceDescription = result.description ?? description
+      const priceCategoryId = result.suggestedCategoryId ?? categoryId
+      if (priceCategoryId && priceTitle && priceDescription) {
+        try {
+          const priceResult = await suggestTaskPrice(priceCategoryId, priceTitle, priceDescription)
+          if (priceResult.available && priceResult.suggestedAmount) {
+            setBudget(String(Math.round(priceResult.suggestedAmount / 1000)))
+            useToastStore.getState().pushToast('success', `Đã gợi ý mức giá dựa trên ${priceResult.sampleSize} việc tương tự — bạn có thể sửa lại.`)
+          }
+        } catch {
+          // Goi y gia la buoc phu, loi o day khong can bao Poster - ho van dang viec binh
+          // thuong voi ngan sach de trong ("thoa thuan") hoac tu nhap tay.
+        }
+      }
+    } catch (error) {
+      useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : 'Không phân tích được ảnh, thử lại sau.')
+    } finally {
+      setAnalyzingImage(false)
+    }
+  }
+
   const handleSubmit = async () => {
     // Giu nguyen loi "addressText" bao tu AddressAutocomplete.onValidityChange (xem
     // handleAddressValidity) - khong ghi de mat trang thai "khong tim thay" dang co.
@@ -476,6 +545,115 @@ export function PostTaskPage() {
               error={!!errors.categoryId}
               options={[{ value: '', label: categories ? 'Chọn nhóm dịch vụ' : 'Đang tải…' },
                 ...(categories ?? []).map((c) => ({ value: c.id, label: c.name }))]}
+            />
+          </Field>
+
+          <Field label="Ảnh minh hoạ công việc" hint={`Không bắt buộc — tối đa ${MAX_IMAGES} ảnh, bấm vào ảnh để phóng to`} error={errors.images}>
+            <div className="flex gap-3 flex-wrap">
+              {images.map((img) => (
+                <div key={img.localId} style={{ width: 96 }}>
+                  <div style={{ position: 'relative', width: 96, height: 96 }}>
+                    <img
+                      src={img.previewUrl}
+                      alt=""
+                      onClick={() => !img.uploading && lightbox.open(images.map((i) => i.previewUrl), images.indexOf(img))}
+                      style={{
+                        width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--r-md)',
+                        border: `var(--bw) solid ${img.error ? 'var(--danger)' : 'var(--border)'}`,
+                        opacity: img.uploading ? 0.5 : 1,
+                        cursor: img.uploading ? 'default' : 'zoom-in',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(img.localId)}
+                      disabled={busy}
+                      aria-label="Bỏ ảnh này"
+                      style={{
+                        position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: 'var(--r-pill)',
+                        background: 'var(--surface-card)', border: 'var(--bw) solid var(--border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+                      }}
+                    >
+                      <Icon name="x" size={14} />
+                    </button>
+                    {img.uploading && (
+                      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-xs)' }}>
+                        Đang tải…
+                      </span>
+                    )}
+                  </div>
+                  {img.error && (
+                    <span style={{ display: 'block', marginTop: 4, fontSize: 'var(--fs-xs)', color: 'var(--danger)', lineHeight: 1.3 }}>
+                      {img.error} Ảnh này sẽ KHÔNG được đăng kèm việc — bấm x để bỏ hoặc thử lại.
+                    </span>
+                  )}
+                </div>
+              ))}
+
+              {images.length < MAX_IMAGES && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy}
+                  className="flex flex-col items-center justify-center gap-1"
+                  style={{
+                    width: 96, height: 96, borderRadius: 'var(--r-md)', border: 'var(--bw) dashed var(--teal-300)',
+                    background: 'var(--bg-section)', color: 'var(--teal-700)', cursor: 'pointer', padding: 0,
+                  }}
+                >
+                  <Icon name="plus" size={20} />
+                  <span style={{ fontSize: 'var(--fs-xs)' }}>Thêm ảnh</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2" style={{ marginTop: 'var(--sp-3)' }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={analyzingImage ? undefined : 'sparkles'}
+                disabled={busy || analyzingImage || !images.some((img) => img.publicUrl && !img.uploading && !img.error)}
+                onClick={() => void handleAnalyzeImage()}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                {analyzingImage ? (
+                  <LatticeLoader status="working" label="Đang phân tích ảnh" showTimer />
+                ) : (
+                  'Điền tự động từ ảnh (AI)'
+                )}
+              </Button>
+              {!images.some((img) => img.publicUrl && !img.uploading && !img.error) && !analyzingImage && (
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                  Thêm ảnh để dùng gợi ý AI
+                </span>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ALLOWED_IMAGE_TYPES.join(',')}
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) void handlePickImages(e.target.files)
+                e.target.value = ''
+              }}
+            />
+          </Field>
+
+          <Field
+            label="Ngân sách"
+            hint="Nhập theo đơn vị nghìn đồng — vd nhập 50 nghĩa là 50.000 đ. Không bắt buộc, để trống hiển thị 'thoả thuận'; đã nhập thì phải trong khoảng 100.000 đ – 50.000.000 đ"
+            error={errors.budgetAmount}
+            style={{ maxWidth: 280 }}
+          >
+            <Input
+              numeric inputMode="numeric"
+              suffix={budget ? formatThousandVnd(budget) : 'nghìn đ'}
+              value={budget}
+              onChange={(e) => { setBudget(e.target.value.replace(/\D/g, '')); setErrors((prev) => ({ ...prev, budgetAmount: '' })) }}
+              disabled={busy}
+              error={!!errors.budgetAmount}
             />
           </Field>
 
@@ -614,22 +792,6 @@ export function PostTaskPage() {
             {savedAddressError && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--danger)' }}>{savedAddressError}</span>}
           </Card>
 
-          <Field
-            label="Ngân sách"
-            hint="Nhập theo đơn vị nghìn đồng — vd nhập 50 nghĩa là 50.000 đ. Không bắt buộc, để trống hiển thị 'thoả thuận'; đã nhập thì phải trong khoảng 100.000 đ – 50.000.000 đ"
-            error={errors.budgetAmount}
-            style={{ maxWidth: 280 }}
-          >
-            <Input
-              numeric inputMode="numeric"
-              suffix={budget ? formatThousandVnd(budget) : 'nghìn đ'}
-              value={budget}
-              onChange={(e) => { setBudget(e.target.value.replace(/\D/g, '')); setErrors((prev) => ({ ...prev, budgetAmount: '' })) }}
-              disabled={busy}
-              error={!!errors.budgetAmount}
-            />
-          </Field>
-
           <Field label="Thời gian mong muốn" hint="Không bắt buộc" error={errors.scheduledAt}>
             <div className="flex items-center gap-2 flex-wrap">
               <Input
@@ -643,78 +805,6 @@ export function PostTaskPage() {
               />
               <TimeSelect value={scheduledTime} onChange={setScheduledTime} disabled={busy || !scheduledDate} />
             </div>
-          </Field>
-
-          <Field label="Ảnh minh hoạ công việc" hint={`Không bắt buộc — tối đa ${MAX_IMAGES} ảnh, bấm vào ảnh để phóng to`} error={errors.images}>
-            <div className="flex gap-3 flex-wrap">
-              {images.map((img) => (
-                <div key={img.localId} style={{ width: 96 }}>
-                  <div style={{ position: 'relative', width: 96, height: 96 }}>
-                    <img
-                      src={img.previewUrl}
-                      alt=""
-                      onClick={() => !img.uploading && lightbox.open(images.map((i) => i.previewUrl), images.indexOf(img))}
-                      style={{
-                        width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--r-md)',
-                        border: `var(--bw) solid ${img.error ? 'var(--danger)' : 'var(--border)'}`,
-                        opacity: img.uploading ? 0.5 : 1,
-                        cursor: img.uploading ? 'default' : 'zoom-in',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveImage(img.localId)}
-                      disabled={busy}
-                      aria-label="Bỏ ảnh này"
-                      style={{
-                        position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: 'var(--r-pill)',
-                        background: 'var(--surface-card)', border: 'var(--bw) solid var(--border)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
-                      }}
-                    >
-                      <Icon name="x" size={14} />
-                    </button>
-                    {img.uploading && (
-                      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-xs)' }}>
-                        Đang tải…
-                      </span>
-                    )}
-                  </div>
-                  {img.error && (
-                    <span style={{ display: 'block', marginTop: 4, fontSize: 'var(--fs-xs)', color: 'var(--danger)', lineHeight: 1.3 }}>
-                      {img.error} Ảnh này sẽ KHÔNG được đăng kèm việc — bấm x để bỏ hoặc thử lại.
-                    </span>
-                  )}
-                </div>
-              ))}
-
-              {images.length < MAX_IMAGES && (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={busy}
-                  className="flex flex-col items-center justify-center gap-1"
-                  style={{
-                    width: 96, height: 96, borderRadius: 'var(--r-md)', border: 'var(--bw) dashed var(--teal-300)',
-                    background: 'var(--bg-section)', color: 'var(--teal-700)', cursor: 'pointer', padding: 0,
-                  }}
-                >
-                  <Icon name="plus" size={20} />
-                  <span style={{ fontSize: 'var(--fs-xs)' }}>Thêm ảnh</span>
-                </button>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ALLOWED_IMAGE_TYPES.join(',')}
-              multiple
-              hidden
-              onChange={(e) => {
-                if (e.target.files && e.target.files.length > 0) void handlePickImages(e.target.files)
-                e.target.value = ''
-              }}
-            />
           </Field>
 
           <Checkbox
@@ -840,6 +930,21 @@ export function PostTaskPage() {
             </div>
           </Dialog>
         </DialogViewport>
+      )}
+
+      {clarifyQuestions && (
+        <ClarifyAssistantDialog
+          questions={clarifyQuestions}
+          originalDescription={description}
+          onClose={() => setClarifyQuestions(null)}
+          onApply={(fullDescription) => {
+            if (fullDescription) {
+              setDescription(fullDescription)
+              useToastStore.getState().pushToast('success', 'Đã bổ sung câu trả lời vào mô tả.')
+            }
+            setClarifyQuestions(null)
+          }}
+        />
       )}
     </AppShell>
   )

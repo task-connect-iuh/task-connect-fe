@@ -26,8 +26,6 @@ export interface SuggestedTaskerResponse {
   // hien thi canh bao, khong tu tinh lai nguong nay.
   lowConfidence: boolean
   distanceKm: number
-  priceMin: number | null
-  priceMax: number | null
   completedJobsNearby: number
 }
 
@@ -55,6 +53,11 @@ export function getSuggestedTaskers(taskId: string, expand = false) {
 /** Poster chu dong moi 1 Tasker cu the lam viec nay - doc lap voi luong Tasker tu ung tuyen (applyToTask). */
 export function createInvite(taskId: string, taskerId: string) {
   return apiFetch<TaskerInviteResponse>(`/tasks/${taskId}/invites`, { method: 'POST', body: { taskerId } })
+}
+
+/** Toan bo loi moi (moi trang thai) Poster da gui cho 1 cong viec - dung de seed lai trang thai nut "Mời" khi vao lai trang gợi ý (SuggestedTaskersPanel.tsx). */
+export function getTaskInvites(taskId: string) {
+  return apiFetch<TaskerInviteResponse[]>(`/tasks/${taskId}/invites`)
 }
 
 /** Tasker chap nhan 1 loi moi minh nhan duoc. */

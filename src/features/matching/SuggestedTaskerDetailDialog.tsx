@@ -25,13 +25,6 @@ function formatDistance(km: number) {
   return `${km.toFixed(1)} km`
 }
 
-function formatPriceRange(min: number | null, max: number | null) {
-  if (min == null && max == null) return 'Giá thoả thuận'
-  if (min != null && max != null) return `${formatVnd(min)} – ${formatVnd(max)}`
-  if (min != null) return `Từ ${formatVnd(min)}`
-  return `Đến ${formatVnd(max as number)}`
-}
-
 type InviteState = 'idle' | 'inviting' | 'invited'
 
 interface SuggestedTaskerDetailDialogProps {
@@ -121,9 +114,6 @@ export function SuggestedTaskerDetailDialog({
             )}
             <span className="flex items-center gap-1" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
               <Icon name="map-pin" size={15} />Cách bạn {formatDistance(tasker.distanceKm)}
-            </span>
-            <span className="flex items-center gap-1" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
-              <Icon name="wallet" size={15} />Giá: {formatPriceRange(tasker.priceMin, tasker.priceMax)}
             </span>
             <span className="flex items-center gap-1" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
               <Icon name="badge-check" size={15} />{tasker.completedJobsNearby} việc đã hoàn tất gần đây

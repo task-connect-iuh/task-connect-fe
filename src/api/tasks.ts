@@ -91,6 +91,79 @@ export function createTaskImageUploadUrl(contentType: string) {
   })
 }
 
+// Khop ClarifyingQuestionResponse.java - 1 cau hoi lam ro AI sinh khi anh chi cho thay trieu
+// chung be mat, khong du de xac dinh category (xem TaskImageSuggestionResponse.clarifyingQuestions).
+export interface ClarifyingQuestionResponse {
+  key: string
+  text: string
+  placeholder: string
+}
+
+// Khop TaskImageSuggestionResponse.java - goi y dien form (tieu de/mo ta/danh muc) tu 1 anh
+// minh hoa DA TAI LEN S3 (co publicUrl). available=false nghia la AI het quota/loi mang, cac
+// truong con lai deu rong - FE hien thong bao va de Poster tu dien tay, KHONG chan dang viec.
+// Khong goi y gia/lich ranh - anh khong the hien hai thu nay (quyet dinh da chot voi nguoi dung).
+// clarifyingQuestions khac rong khi mo ta AI vua dien CON CHUNG CHUNG (chua neu ro 1 su co cu
+// the) - DOC LAP voi suggestedCategoryId (xem Javadoc TaskImageSuggestionResponse.java). FE hien
+// modal "Hoi them" (ClarifyAssistantDialog.tsx) bat ke suggestedCategoryId co gia tri hay khong.
+export interface TaskImageSuggestionResponse {
+  available: boolean
+  title: string | null
+  description: string | null
+  suggestedCategoryId: string | null
+  suggestedCategoryConfidence: number
+  clarifyingQuestions: ClarifyingQuestionResponse[]
+}
+
+/** Goi y dien form tu 1 anh da tai len S3 (dung publicUrl vua nhan tu createTaskImageUploadUrl). */
+export function analyzeTaskImage(imageUrl: string) {
+  return apiFetch<TaskImageSuggestionResponse>('/tasks/analyze-image', {
+    method: 'POST',
+    body: { imageUrl },
+  })
+}
+
+// Khop TaskPriceSuggestionResponse.java - goi y muc gia dua tren cac task TUONG TU da chot gia
+// trong qua khu, cung category (khong dam phan/quyet dinh thay Poster, chi la diem khoi dau).
+// available=false nghia la chua du du lieu tuong tu hoac AI loi/het quota - FE giu nguyen o
+// Ngan sach nhu cu ("thoa thuan"), KHONG bao loi, KHONG chan dang viec.
+export interface TaskPriceSuggestionResponse {
+  available: boolean
+  suggestedAmount: number | null
+  sampleSize: number
+}
+
+/** Goi y muc gia dua tren title/description/categoryId HIEN TAI tren form (tu AI dien tu anh hoac tu go tay). */
+export function suggestTaskPrice(categoryId: string, title: string, description: string) {
+  return apiFetch<TaskPriceSuggestionResponse>('/tasks/suggest-price', {
+    method: 'POST',
+    body: { categoryId, title, description },
+  })
+}
+
+// Khop AnsweredQuestionRequest.java - 1 cau hoi lam ro da duoc Poster tra loi, gui kem khi goi
+// refineClarifyingAnswers (chi gui cau DA tra loi, da loc cau de trong o FE).
+export interface AnsweredQuestion {
+  questionText: string
+  answer: string
+}
+
+// Khop RefineClarifyingAnswersResponse.java - mo ta da duoc AI gop + viet lai tu mo ta hien tai
+// + cac cau tra loi trong modal "Hoi them". available=false nghia la AI het quota/loi mang - FE
+// tu fallback ve cach ghep tho "{questionText}: {answer}." (xem ClarifyAssistantDialog.tsx).
+export interface RefineClarifyingAnswersResponse {
+  available: boolean
+  refinedDescription: string | null
+}
+
+/** Gop mo ta hien tai + cac cau tra loi trong modal "Hoi them" thanh 1 doan mo ta AI viet lai. */
+export function refineClarifyingAnswers(originalDescription: string, answers: AnsweredQuestion[]) {
+  return apiFetch<RefineClarifyingAnswersResponse>('/tasks/refine-description', {
+    method: 'POST',
+    body: { originalDescription, answers },
+  })
+}
+
 // --- UC10 (Tasker tim/ung tuyen viec) + UC11 (Poster xac nhan) + UC09/UC16 (loi moi truc
 // tiep, hoi them, thuong luong gia qua Chat - xem task-connect-claude/docs/PROGRESS-CHAT-MODULE.md).
 // Khop dung TaskApplicationStatus/TaskFeedItemResponse/TaskApplicationResponse/MyApplicationResponse

@@ -7,7 +7,7 @@ import { Card } from '@ds/components/core/Card'
 import { DataRow } from '@ds/components/marketplace/DataRow'
 import { EmptyState } from '@ds/components/feedback/EmptyState'
 import { Icon } from '@ds/components/core/Icon'
-import { createInvite, getSuggestedTaskers } from '../../api/matching.ts'
+import { createInvite, getSuggestedTaskers, getTaskInvites } from '../../api/matching.ts'
 import type { SuggestedTaskerResponse } from '../../api/matching.ts'
 import type { TaskResponse } from '../../api/tasks.ts'
 import { ApiError } from '../../api/client.ts'
@@ -22,14 +22,6 @@ function formatDistance(km: number) {
 
 function formatVnd(amount: number) {
   return `${Math.round(amount).toLocaleString('vi-VN')} đ`
-}
-
-/** "300.000 đ - 500.000 đ" - khop quy uoc tien te da dung o MyTasksPage/TaskerJobDetailPage (formatBudget/formatVnd), khong dung ky hieu ₫ rieng de dong bo voi phan con lai cua app that. */
-function formatPriceRange(min: number | null, max: number | null) {
-  if (min == null && max == null) return 'Giá thoả thuận'
-  if (min != null && max != null) return `${formatVnd(min)} – ${formatVnd(max)}`
-  if (min != null) return `Từ ${formatVnd(min)}`
-  return `Đến ${formatVnd(max as number)}`
 }
 
 function formatBudget(amount: number | null) {
@@ -79,7 +71,6 @@ function FeaturedTaskerCard({ tasker, inviteState, onOpenDetail, onInvite, onTog
           <strong style={{ fontSize: 'var(--fs-body-lg)', display: 'block' }}>{tasker.fullName}</strong>
           <div className="flex gap-4 flex-wrap" style={{ marginTop: 6, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
             <span className="tc-num">{formatDistance(tasker.distanceKm)}</span>
-            <span className="tc-num">{formatPriceRange(tasker.priceMin, tasker.priceMax)}</span>
             <span>{verifiedLabel(tasker)}</span>
           </div>
         </div>
@@ -152,7 +143,7 @@ interface CompactTaskerCardProps {
  */
 function CompactTaskerCard({ tasker, inviteState, onOpenDetail, onInvite }: CompactTaskerCardProps) {
   const verified = tasker.kycStatus === 'VERIFIED'
-  const summary = `Cách ${formatDistance(tasker.distanceKm)} · ${formatPriceRange(tasker.priceMin, tasker.priceMax)} · ${tasker.completedJobsNearby} việc đã hoàn tất gần đây.`
+  const summary = `Cách ${formatDistance(tasker.distanceKm)} · ${tasker.completedJobsNearby} việc đã hoàn tất gần đây.`
 
   return (
     <Card
@@ -263,7 +254,25 @@ export function SuggestedTaskersPanel({ taskId, task }: SuggestedTaskersPanelPro
 
   useEffect(() => {
     setSuggestions(null)
+    setInviteStates({})
     loadSuggestions(false)
+    // Nap lai cac loi moi da gui truoc do cho task nay (vi du tu phien/lan vao truoc) de nut
+    // "Mời" hien dung trang thai disabled va "Đã mời" dem dung so thuc, khong bi reset ve 0
+    // moi khi component mount lai (phan hoi nguoi dung: quay lai trang bi mat trang thai).
+    getTaskInvites(taskId)
+      .then((invites) => {
+        setInviteStates((prev) => {
+          const next = { ...prev }
+          for (const invite of invites) {
+            next[invite.taskerId] = 'invited'
+          }
+          return next
+        })
+      })
+      .catch(() => {
+        // Khong chan luong chinh (danh sach goi y) neu rieng buoc nay loi - Poster van moi
+        // duoc, chi mat phan "khoi phuc trang thai da moi tu truoc" cho lan tai nay.
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
@@ -275,7 +284,11 @@ export function SuggestedTaskersPanel({ taskId, task }: SuggestedTaskersPanelPro
         useToastStore.getState().pushToast('success', `Đã gửi lời mời tới ${tasker.fullName}.`)
       })
       .catch((error) => {
-        setInviteStates((prev) => ({ ...prev, [tasker.taskerId]: 'idle' }))
+        // ALREADY_INVITED nghia la da moi tu truoc (vi du state cuc bo chua kip nap luc mount) -
+        // giu nut o trang thai 'invited' thay vi tra ve 'idle' (se lam nut sang lai, bam duoc
+        // lan nua va lai nhan dung loi nay).
+        const alreadyInvited = error instanceof ApiError && error.code === 'MATCH-409-ALREADY_INVITED'
+        setInviteStates((prev) => ({ ...prev, [tasker.taskerId]: alreadyInvited ? 'invited' : 'idle' }))
         useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : 'Gửi lời mời thất bại, thử lại sau.')
       })
   }
@@ -318,9 +331,8 @@ export function SuggestedTaskersPanel({ taskId, task }: SuggestedTaskersPanelPro
 
   const visibleSuggestions = suggestions.filter((t) => !dismissedIds.has(t.taskerId))
   const selectedTasker = selectedTaskerId ? suggestions.find((t) => t.taskerId === selectedTaskerId) ?? null : null
-  // Dem so loi moi da gui TRONG PHIEN NAY (khong co endpoint liet ke loi moi da gui cho Poster
-  // o backend hien tai - xem MatchingController - nen day chi la so dem cuc bo, co the it hon
-  // so that neu Poster da moi tu truoc do o phien khac).
+  // Tong so loi moi da gui cho task nay (gom ca loi moi tu phien truoc, nap lai qua
+  // getTaskInvites() o useEffect phia tren, va loi moi vua gui trong phien hien tai).
   const invitedCount = Object.values(inviteStates).filter((s) => s === 'invited').length
 
   const rightRail = (
