@@ -223,7 +223,10 @@ function SkillForm({ category, existing, onDone, onCancel }: SkillFormProps) {
     }
     if (!file) nextErrors.file = 'Tải file chứng chỉ.'
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0 || !file) return
+    if (Object.keys(nextErrors).length > 0 || !file) {
+      useToastStore.getState().pushToast('danger', 'Vui lòng điền đầy đủ thông tin bắt buộc.')
+      return
+    }
 
     setFormError('')
     setBusy(true)

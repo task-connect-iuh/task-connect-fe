@@ -6,6 +6,11 @@ import { ProposalStatusBadge } from './ProposalStatusBadge.tsx'
 interface PriceProposalCardProps {
   message: ChatMessageResponse
   viewerAccountId: string
+  // Ty le phi nen tang doc tu /system-parameters (InboxPage tai san, null neu chua tai xong) -
+  // dung de hien breakdown "Phi nen tang" / "Tasker thuc nhan" duoi so tien de xuat, theo yeu
+  // cau nguoi dung (2026-09-28): can thay ro so tien Tasker thuc nhan ngay trong bong bong chat,
+  // khong phai doi den luc chot gia moi biet.
+  platformFeeRate: number | null
   busy: boolean
   onAccept: () => void
   onReject: () => void
@@ -18,7 +23,7 @@ interface PriceProposalCardProps {
  * PROPOSED, chinh nguoi tao thay Thu hoi - dung 3 nut nhu mockup, khong co "Tra gia khac" rieng
  * (tra gia khac chinh la gui 1 PRICE_PROPOSAL moi sau khi de xuat nay het hieu luc).
  */
-export function PriceProposalCard({ message, viewerAccountId, busy, onAccept, onReject, onWithdraw }: PriceProposalCardProps) {
+export function PriceProposalCard({ message, viewerAccountId, platformFeeRate, busy, onAccept, onReject, onWithdraw }: PriceProposalCardProps) {
   const mine = message.senderAccountId === viewerAccountId
   const status = message.proposalStatus ?? 'PROPOSED'
   const proposed = status === 'PROPOSED'
@@ -30,7 +35,7 @@ export function PriceProposalCard({ message, viewerAccountId, busy, onAccept, on
   const amount = message.priceProposalAmount ?? 0
 
   return (
-    <div style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+    <div id={`chat-message-${message.id}`} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
       <div
         style={{
           maxWidth: '84%',
@@ -58,6 +63,16 @@ export function PriceProposalCard({ message, viewerAccountId, busy, onAccept, on
         >
           {formatVnd(amount)}
         </span>
+        {active && platformFeeRate != null && (
+          <div className="flex flex-col" style={{ marginTop: 'var(--sp-1)', gap: 2 }}>
+            <span className="tc-num" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+              Phí nền tảng ({Math.round(platformFeeRate * 100)}%): −{formatVnd(amount * platformFeeRate)}
+            </span>
+            <span className="tc-num" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+              Tasker thực nhận: {formatVnd(amount * (1 - platformFeeRate))}
+            </span>
+          </div>
+        )}
         {message.body && (
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-body)', marginTop: 4, lineHeight: 1.55 }}>{message.body}</p>
         )}
@@ -70,7 +85,15 @@ export function PriceProposalCard({ message, viewerAccountId, busy, onAccept, on
               </>
             )}
             {mine && (
-              <Button variant="ghost" size="sm" icon="undo-2" disabled={busy} onClick={onWithdraw}>Thu hồi</Button>
+              /* Ghost mac dinh border trong suot, tren nen money-tint cua the de xuat gia thi nut
+                 gan nhu vo hinh - to mau border bang --amber-400 cho khop khung the va noi ro nut. */
+              <Button
+                variant="ghost" size="sm" icon="undo-2"
+                style={{ borderColor: 'var(--amber-400)' }}
+                disabled={busy} onClick={onWithdraw}
+              >
+                Thu hồi
+              </Button>
             )}
           </div>
         )}

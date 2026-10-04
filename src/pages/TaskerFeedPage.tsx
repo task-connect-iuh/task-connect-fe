@@ -13,7 +13,7 @@ import { KycStatus } from '@ds/components/marketplace/KycStatus'
 import { MoneyAmount } from '@ds/components/marketplace/MoneyAmount'
 import { Tabs } from '@ds/components/navigation/Tabs'
 import { AppShell } from '../components/AppShell.tsx'
-import { browseOpenTasks } from '../api/tasks.ts'
+import { browseOpenTasks, getMyApplications } from '../api/tasks.ts'
 import type { TaskFeedItemResponse } from '../api/tasks.ts'
 import { ApiError } from '../api/client.ts'
 import { toKycStatusState, useTaskerEligibility } from '../features/tasker/useTaskerEligibility.ts'
@@ -31,14 +31,17 @@ function formatScheduleLabel(iso: string | null) {
 interface FeedJobCardProps {
   job: TaskFeedItemResponse
   eligible: boolean
+  previouslyWithdrawn: boolean
   onClick: () => void
 }
 
 /** The che 1 viec trong feed - phong theo bo cuc TaskRow cua MyTasksPage.tsx (Poster) de dong
  * bo giao dien giua 2 vai tro. KHONG hien khoang cach (chua co Geo, xem api/tasks.ts) va KHONG
  * hien so nguoi ung tuyen (yeu cau nguoi dung: tang bao mat, khong lo so luong doi thu canh
- * tranh cho Tasker khac xem). */
-function FeedJobCard({ job, eligible, onClick }: FeedJobCardProps) {
+ * tranh cho Tasker khac xem). previouslyWithdrawn: don gan nhat cua chinh Tasker cho viec nay
+ * dang WITHDRAWN - nhac lai bang Badge tone="info" (cung hang voi badge "Can chung chi"),
+ * khong chan ung tuyen lai. */
+function FeedJobCard({ job, eligible, previouslyWithdrawn, onClick }: FeedJobCardProps) {
   return (
     <Card
       interactive
@@ -58,6 +61,9 @@ function FeedJobCard({ job, eligible, onClick }: FeedJobCardProps) {
       {job.budgetAmount != null
         ? <MoneyAmount value={job.budgetAmount} size="md" />
         : <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>Ngân sách thoả thuận</span>}
+      {previouslyWithdrawn && (
+        <Badge tone="info" icon="history" style={{ alignSelf: 'flex-start' }}>Bạn từng ứng tuyển việc này</Badge>
+      )}
     </Card>
   )
 }
@@ -80,11 +86,30 @@ export function TaskerFeedPage() {
   const [q, setQ] = useState('')
   const [categoryId, setCategoryId] = useState<string>('all')
   const [sort, setSort] = useState<SortMode>('newest')
+  // Chi dung de nhac "Ban tung ung tuyen viec nay" tren the feed - loi tai khong chan xem/ung
+  // tuyen feed nen bo qua lang le, khong hien Alert loadError rieng cho no.
+  const [withdrawnTaskIds, setWithdrawnTaskIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     browseOpenTasks()
       .then(setJobs)
       .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Không tải được danh sách công việc.'))
+    getMyApplications()
+      .then((applications) => {
+        const latestByTask = new Map<string, (typeof applications)[number]>()
+        for (const application of applications) {
+          const latest = latestByTask.get(application.taskId)
+          if (!latest || new Date(application.createdAt).getTime() > new Date(latest.createdAt).getTime()) {
+            latestByTask.set(application.taskId, application)
+          }
+        }
+        const ids = new Set<string>()
+        for (const [taskId, application] of latestByTask) {
+          if (application.status === 'WITHDRAWN') ids.add(taskId)
+        }
+        setWithdrawnTaskIds(ids)
+      })
+      .catch(() => {})
   }, [])
 
   const filtered = useMemo(() => {
@@ -150,6 +175,7 @@ export function TaskerFeedPage() {
                 key={job.id}
                 job={job}
                 eligible={isEligibleForCategory(job.categoryId)}
+                previouslyWithdrawn={withdrawnTaskIds.has(job.id)}
                 onClick={() => navigate(`/tim-viec/${job.id}`)}
               />
             ))}

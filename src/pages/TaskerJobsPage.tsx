@@ -14,11 +14,12 @@ import { AppShell } from '../components/AppShell.tsx'
 import { DialogViewport } from '../components/DialogViewport.tsx'
 import { DirectionsModal } from '../components/DirectionsModal.tsx'
 import { ImageLightbox } from '../components/ImageLightbox.tsx'
-import { applyFromInquiry, getMyApplications, withdrawApplication } from '../api/tasks.ts'
+import { applyFromInquiry, getMyApplications, reconfirmApplication, withdrawApplication } from '../api/tasks.ts'
 import type { MyApplicationResponse, TaskApplicationStatus } from '../api/tasks.ts'
 import { acceptInvite, declineInvite, getMyInvites } from '../api/matching.ts'
 import type { MyInviteResponse, TaskerInviteStatus } from '../api/matching.ts'
 import { ApiError } from '../api/client.ts'
+import { getSystemParameters } from '../api/systemParameters.ts'
 import { LOCATION_TYPE_LABELS } from '../utils/locationType.ts'
 import { SUPPLIES_STATUS_LABELS } from '../utils/suppliesStatus.ts'
 import { useImageLightbox } from '../utils/useImageLightbox.ts'
@@ -40,6 +41,9 @@ const APPLICATION_STATUS_LABEL: Record<TaskApplicationStatus, string> = {
   REJECTED_AUTO: 'Việc đã giao người khác',
   DECLINED: 'Đã từ chối lời mời',
   INVITE_EXPIRED: 'Lời mời đã hết hạn',
+  // Them cho UC07 (Poster huy/sua viec da dang).
+  CANCELLED: 'Công việc đã huỷ',
+  TIME_CHANGED_NEEDS_RECONFIRM: 'Cần bạn xác nhận lại',
 }
 const APPLICATION_STATUS_TONE: Record<TaskApplicationStatus, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
   PENDING: 'info',
@@ -52,6 +56,19 @@ const APPLICATION_STATUS_TONE: Record<TaskApplicationStatus, 'neutral' | 'succes
   REJECTED_AUTO: 'neutral',
   DECLINED: 'danger',
   INVITE_EXPIRED: 'neutral',
+  CANCELLED: 'neutral',
+  TIME_CHANGED_NEEDS_RECONFIRM: 'warning',
+}
+
+/**
+ * Nhan/tone badge trang thai 1 don, uu tien hasBooking truoc status - don UNG VIEN THANG cua
+ * UC11 "Chon nguoi nay" GIU NGUYEN status=PENDING (xem Javadoc TaskApplicationService.confirm()
+ * ben BE) nen APPLICATION_STATUS_LABEL[PENDING]="Chờ xác nhận" se sai hoan toan mot khi da co
+ * booking - phai ghi de rieng thanh "Đã nhận việc" (yeu cau nguoi dung 2026-09-28).
+ */
+function applicationStatusBadge(application: MyApplicationResponse): { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info' } {
+  if (application.hasBooking) return { label: 'Đã nhận việc', tone: 'success' }
+  return { label: APPLICATION_STATUS_LABEL[application.status], tone: APPLICATION_STATUS_TONE[application.status] }
 }
 
 /** "Thứ 5, 14:00" - dung cho lich viec sap toi va nhan gio trong danh sach. */
@@ -118,7 +135,8 @@ export function ApplicationDetailDialog({ application, onClose }: ApplicationDet
       <Dialog title={application.taskTitle} subtitle={application.categoryName} onClose={onClose} style={{ maxWidth: 640 }}>
         <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 'var(--sp-1)' }}>
           <div className="flex flex-col gap-4">
-            <Badge tone={APPLICATION_STATUS_TONE[application.status]}>{APPLICATION_STATUS_LABEL[application.status]}</Badge>
+            <Badge tone={applicationStatusBadge(application).tone}>{applicationStatusBadge(application).label}</Badge>
+            {application.taskStatus === 'REJECTED' && <Badge tone="danger">Việc bị admin từ chối</Badge>}
 
             {application.taskImageUrls.length > 0 && (
               <Button
@@ -137,7 +155,7 @@ export function ApplicationDetailDialog({ application, onClose }: ApplicationDet
             {application.taskArrivalNotes && <DataRow label="Lưu ý khi tới nơi" value={application.taskArrivalNotes} />}
             <DataRow label="Tình trạng vật tư" value={SUPPLIES_STATUS_LABELS[application.taskSuppliesStatus]} />
             {application.taskSuppliesNote && <DataRow label="Mô tả thêm về vật tư" value={application.taskSuppliesNote} />}
-            <DataRow label="Ngân sách" value={formatBudget(application.taskBudgetAmount)} numeric />
+            <DataRow label={application.taskBudgetAmount != null ? 'Ngân sách ban đầu' : 'Ngân sách'} value={formatBudget(application.taskBudgetAmount)} numeric />
             <DataRow label="Thời gian mong muốn" value={application.taskScheduledAt ? formatDateTime(application.taskScheduledAt) : 'Chưa xác định'} />
             <DataRow label="Ứng tuyển lúc" value={formatDateTime(application.createdAt)} />
 
@@ -172,27 +190,41 @@ export function ApplicationDetailDialog({ application, onClose }: ApplicationDet
 
 interface ApplicationRowProps {
   application: MyApplicationResponse
+  platformFeeRate: number | null
   onOpenDetail: () => void
-  onOpenGallery: (startIndex: number) => void
   onWithdraw: () => void
   withdrawing: boolean
   onApplyFromInquiry: () => void
   applying: boolean
+  onReconfirm: () => void
+  reconfirming: boolean
 }
 
 /** Mot dong viec da ung tuyen/da nhan - phong theo bo cuc TaskRow cua MyTasksPage.tsx (Poster) de dong bo giao dien giua 2 vai tro. */
 function ApplicationRow({
-  application, onOpenDetail, onOpenGallery, onWithdraw, withdrawing, onApplyFromInquiry, applying,
+  application, platformFeeRate, onOpenDetail, onWithdraw, withdrawing, onApplyFromInquiry, applying,
+  onReconfirm, reconfirming,
 }: ApplicationRowProps) {
+  // Uu tien gia THAT da chot qua chat (agreedPriceAmount, doc tu task_price_history ben BE) -
+  // chi fallback ve ngan sach goc khi chua co de xuat nao duoc chap nhan. Ca hai null (viec
+  // "thoa thuan" ma chua chot gia lan nao) thi khong co gi de tru phi, giu nguyen nhan "Ngan
+  // sach"/"Thoa thuan" nhu cu (yeu cau nguoi dung 2026-09-28).
+  const payoutBaseAmount = application.agreedPriceAmount ?? application.taskBudgetAmount
   const navigate = useNavigate()
   const [showDirections, setShowDirections] = useState(false)
+  const isDimmed = application.status === 'WITHDRAWN' || application.status === 'REJECTED' || application.taskStatus === 'REJECTED'
   return (
-    <Card padding="var(--sp-4) var(--sp-5)" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+    <Card
+      tone={isDimmed ? 'sunken' : 'plain'}
+      padding="var(--sp-4) var(--sp-5)"
+      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}
+    >
       <div className="flex gap-4 items-start">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge tone="brand">{application.categoryName}</Badge>
-            <Badge tone={APPLICATION_STATUS_TONE[application.status]}>{APPLICATION_STATUS_LABEL[application.status]}</Badge>
+            <Badge tone={applicationStatusBadge(application).tone}>{applicationStatusBadge(application).label}</Badge>
+            {application.taskStatus === 'REJECTED' && <Badge tone="danger">Việc bị admin từ chối</Badge>}
           </div>
           <strong style={{ display: 'block', marginTop: 6, fontSize: 'var(--fs-body-lg)', color: 'var(--text-title)', lineHeight: 1.35 }}>
             {application.taskTitle}
@@ -207,12 +239,20 @@ function ApplicationRow({
           </div>
         </div>
         <div style={{ flex: '0 0 auto' }}>
-          {application.taskBudgetAmount != null
-            ? <MoneyAmount value={application.taskBudgetAmount} size="md" label="Ngân sách" />
+          {payoutBaseAmount != null
+            ? (platformFeeRate != null
+                ? (
+                    <MoneyAmount
+                      value={payoutBaseAmount * (1 - platformFeeRate)}
+                      size="md" tone="money" label="Bạn nhận được"
+                      style={{ alignItems: 'flex-end' }}
+                    />
+                  )
+                : <MoneyAmount value={payoutBaseAmount} size="md" label="Ngân sách" style={{ alignItems: 'flex-end' }} />)
             : (
                 <div className="flex flex-col" style={{ alignItems: 'flex-end' }}>
-                  <span className="tc-label" style={{ fontSize: 'var(--fs-label)' }}>Ngân sách</span>
-                  <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>Thoả thuận</span>
+                  <span className="tc-label" style={{ fontSize: 'var(--fs-label)' }}>Bạn nhận được</span>
+                  <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-muted)' }}>Chưa chốt giá</span>
                 </div>
               )}
         </div>
@@ -224,18 +264,15 @@ function ApplicationRow({
         </div>
       )}
 
+      {application.status === 'TIME_CHANGED_NEEDS_RECONFIRM' && application.taskStatus === 'OPEN' && (
+        <Alert tone="warning" title="Người đăng vừa đổi thời gian mong muốn">
+          Thời gian mới: <strong>{application.taskScheduledAt ? formatWeekdayTime(application.taskScheduledAt) : 'Chưa xác định'}</strong>.
+          Bấm "Vẫn nhận việc" nếu bạn vẫn làm được, hoặc "Rút ứng tuyển" nếu giờ mới không phù hợp.
+        </Alert>
+      )}
+
       <div className="flex items-center gap-3" style={{ paddingTop: 'var(--sp-3)', borderTop: 'var(--bw-hair) solid var(--border-subtle)' }}>
         <Button variant="secondary" size="sm" icon="eye" onClick={onOpenDetail}>Xem chi tiết</Button>
-        {application.taskImageUrls.length > 0 ? (
-          <Button variant="secondary" size="sm" icon="image" onClick={() => onOpenGallery(0)}>
-            Xem ảnh ({application.taskImageUrls.length})
-          </Button>
-        ) : (
-          <span className="flex items-center gap-1" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-faint)' }}>
-            <Icon name="image-off" size={15} />Không có ảnh
-          </span>
-        )}
-
         <Button
           variant="secondary" size="sm" icon="message-square"
           onClick={() => navigate(`/tin-nhan/${application.applicationId}`, {
@@ -255,13 +292,25 @@ function ApplicationRow({
         {application.status === 'NEEDS_RECONFIRM' && (
           <Button size="sm" icon="refresh-cw" onClick={() => navigate(`/tim-viec/${application.taskId}`)}>Ứng tuyển lại</Button>
         )}
-        {application.status === 'INQUIRING' && (
+        {application.status === 'INQUIRING' && application.taskStatus === 'OPEN' && (
           <Button size="sm" icon="send" disabled={applying} onClick={onApplyFromInquiry}>
             {applying ? 'Đang gửi…' : 'Ứng tuyển'}
           </Button>
         )}
-        {application.status === 'PENDING' && (
-          <Button variant="ghost" size="sm" icon="undo-2" disabled={withdrawing} onClick={onWithdraw}>
+        {/* UC07 Tier 3: Poster doi thoi gian mong muon luc don dang PENDING - don treo o
+            TIME_CHANGED_NEEDS_RECONFIRM cho toi khi Tasker bam nut nay (tro ve PENDING). */}
+        {application.status === 'TIME_CHANGED_NEEDS_RECONFIRM' && application.taskStatus === 'OPEN' && (
+          <Button size="sm" icon="check" disabled={reconfirming} onClick={onReconfirm}>
+            {reconfirming ? 'Đang xác nhận…' : 'Vẫn nhận việc'}
+          </Button>
+        )}
+        {/* danger: rut ung tuyen la hanh dong huy, dung mau do de canh bao ro rang (dong bo voi InboxPage).
+            taskStatus === 'OPEN': an nut nay ngay khi Poster da "Chon nguoi nay" - luc do status
+            van la PENDING nhung task da ASSIGNED nen khong con rut duoc nua. Mo rong sang
+            TIME_CHANGED_NEEDS_RECONFIRM (UC07 Tier 3) - Tasker khong dong y gio moi thi rut. */}
+        {(application.status === 'PENDING' || application.status === 'TIME_CHANGED_NEEDS_RECONFIRM')
+          && application.taskStatus === 'OPEN' && (
+          <Button variant="danger" size="sm" icon="undo-2" disabled={withdrawing} onClick={onWithdraw}>
             {withdrawing ? 'Đang rút…' : 'Rút ứng tuyển'}
           </Button>
         )}
@@ -406,12 +455,21 @@ export function TaskerJobsPage() {
   const [detailApplication, setDetailApplication] = useState<MyApplicationResponse | null>(null)
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null)
   const [applyingId, setApplyingId] = useState<string | null>(null)
-  const rowLightbox = useImageLightbox()
+  const [reconfirmingId, setReconfirmingId] = useState<string | null>(null)
+  // Ty le phi nen tang doc tu /system-parameters (khong hardcode) - dung de hien "Ban nhan duoc"
+  // (sau khi tru phi) o rail phai tung dong ApplicationRow. null cho den khi tai xong.
+  const [platformFeeRate, setPlatformFeeRate] = useState<number | null>(null)
 
   useEffect(() => {
     getMyApplications()
       .then(setApplications)
       .catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Không tải được danh sách việc đã ứng tuyển.'))
+  }, [])
+
+  useEffect(() => {
+    getSystemParameters()
+      .then((params) => setPlatformFeeRate(params.platformFeeRate))
+      .catch(() => { /* giu null, ApplicationRow fallback ve nhan "Ngan sach" khi chua tai duoc */ })
   }, [])
 
   const refreshInvites = () => {
@@ -421,12 +479,25 @@ export function TaskerJobsPage() {
   }
   useEffect(refreshInvites, [])
 
-  const accepted = useMemo(() => (applications ?? []).filter((a) => a.status === 'ACCEPTED'), [applications])
+  // Don UNG VIEN THANG cua UC11 "Chon nguoi nay" GIU NGUYEN status=PENDING (xem Javadoc
+  // TaskApplicationService.confirm() ben BE) - hasBooking moi la tin hieu dung "da duoc chon",
+  // khong the chi dua vao status=ACCEPTED (gia tri legacy, khong con code path nao set nua).
+  const accepted = useMemo(() => (applications ?? []).filter((a) => a.status === 'ACCEPTED' || a.hasBooking), [applications])
+  // Viec bi admin tu choi (taskStatus=REJECTED) khong con gi de cho ca du don van PENDING - loai
+  // khoi tab "Cho xac nhan" (yeu cau nguoi dung 2026-09-28). Da co booking thi thuoc tab "Da nhan"
+  // o tren, khong con thuoc "Cho xac nhan" nua.
   const waiting = useMemo(
-    () => (applications ?? []).filter((a) => a.status === 'PENDING' || a.status === 'NEEDS_RECONFIRM'),
+    () => (applications ?? []).filter((a) => (a.status === 'PENDING' || a.status === 'NEEDS_RECONFIRM'
+        || a.status === 'TIME_CHANGED_NEEDS_RECONFIRM')
+      && !a.hasBooking && a.taskStatus !== 'REJECTED'),
     [applications],
   )
-  const inquiring = useMemo(() => (applications ?? []).filter((a) => a.status === 'INQUIRING'), [applications])
+  // Cung nguyen tac voi "waiting" o tren: viec bi admin tu choi khong con gi de hoi them ca -
+  // loai khoi tab "Dang hoi them" (yeu cau nguoi dung 2026-09-28).
+  const inquiring = useMemo(
+    () => (applications ?? []).filter((a) => a.status === 'INQUIRING' && a.taskStatus !== 'REJECTED'),
+    [applications],
+  )
   const shown = tab === 'accepted' ? accepted : tab === 'waiting' ? waiting : tab === 'inquiring' ? inquiring : (applications ?? [])
 
   /** Rut mot don dang PENDING - dung lai withdrawApplication() da co san cho man Hoi them, chi khac o tab hien thi. */
@@ -451,6 +522,18 @@ export function TaskerJobsPage() {
       })
       .catch((error) => useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : 'Gửi ứng tuyển thất bại, thử lại sau.'))
       .finally(() => setApplyingId(null))
+  }
+
+  /** Tasker bam "Van nhan viec" sau khi Poster doi thoi gian mong muon (UC07 Tier 3) - don tro ve PENDING. */
+  const handleReconfirm = (application: MyApplicationResponse) => {
+    setReconfirmingId(application.applicationId)
+    reconfirmApplication(application.taskId, application.applicationId)
+      .then((updated) => {
+        setApplications((prev) => prev?.map((a) => (a.applicationId === updated.id ? { ...a, status: updated.status } : a)) ?? null)
+        useToastStore.getState().pushToast('success', 'Đã xác nhận vẫn nhận công việc này.')
+      })
+      .catch((error) => useToastStore.getState().pushToast('danger', error instanceof ApiError ? error.message : 'Xác nhận thất bại, thử lại sau.'))
+      .finally(() => setReconfirmingId(null))
   }
 
   const clashes = useMemo(() => findScheduleClashes(accepted), [accepted])
@@ -521,12 +604,14 @@ export function TaskerJobsPage() {
               <ApplicationRow
                 key={application.applicationId}
                 application={application}
+                platformFeeRate={platformFeeRate}
                 onOpenDetail={() => setDetailApplication(application)}
-                onOpenGallery={(startIndex) => rowLightbox.open(application.taskImageUrls, startIndex)}
                 onWithdraw={() => handleWithdraw(application)}
                 withdrawing={withdrawingId === application.applicationId}
                 onApplyFromInquiry={() => handleApplyFromInquiry(application)}
                 applying={applyingId === application.applicationId}
+                onReconfirm={() => handleReconfirm(application)}
+                reconfirming={reconfirmingId === application.applicationId}
               />
             ))}
             {applications && shown.length === 0 && (
@@ -567,23 +652,6 @@ export function TaskerJobsPage() {
 
       {detailApplication && (
         <ApplicationDetailDialog application={detailApplication} onClose={() => setDetailApplication(null)} />
-      )}
-
-      {rowLightbox.viewerUrl && (
-        <ImageLightbox
-          url={rowLightbox.viewerUrl}
-          zoom={rowLightbox.viewerZoom}
-          rotation={rowLightbox.viewerRotation}
-          onClose={rowLightbox.close}
-          onZoomIn={rowLightbox.zoomIn}
-          onZoomOut={rowLightbox.zoomOut}
-          onRotate={rowLightbox.rotate}
-          index={rowLightbox.index}
-          total={rowLightbox.total}
-          onNext={rowLightbox.next}
-          onPrev={rowLightbox.prev}
-          onGoTo={rowLightbox.goTo}
-        />
       )}
     </AppShell>
   )

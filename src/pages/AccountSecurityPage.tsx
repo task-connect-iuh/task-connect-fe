@@ -87,7 +87,10 @@ export function AccountSecurityPage() {
     if (!confirmNewPassword) nextErrors.confirm = 'Nhập lại mật khẩu mới.'
     else if (confirmNewPassword !== newPassword) nextErrors.confirm = 'Hai mật khẩu chưa khớp nhau.'
     setPasswordErrors(nextErrors)
-    if (Object.keys(nextErrors).length > 0) return
+    if (Object.keys(nextErrors).length > 0) {
+      useToastStore.getState().pushToast('danger', 'Vui lòng điền đầy đủ thông tin bắt buộc.')
+      return
+    }
 
     setPasswordFormError('')
     setPasswordBusy(true)
